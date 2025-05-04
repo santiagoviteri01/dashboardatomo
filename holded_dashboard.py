@@ -188,9 +188,6 @@ with tab2:
             except mysql.connector.Error as e:
                 st.error(f"❌ Error de conexión con la base de datos: {e}")
                 return pd.DataFrame()
-        st.subheader("🧪 Primeros 10 registros de usuarios")
-        df_preview = consultar("SELECT * FROM plasma_core.users LIMIT 10")
-        st.dataframe(df_preview)
 
         try:
             fecha = st.date_input("📅 Selecciona una fecha para consultar", key="fecha_tab2")
