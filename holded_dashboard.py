@@ -185,42 +185,38 @@ with tab2:
             datos = cursor.fetchall()
             columnas = [col[0] for col in cursor.description]
             cursor.close()
-            conn.close()  # <-- cierre explícito
+            conn.close()
             return pd.DataFrame(datos, columns=columnas)
 
         try:
-            fechas = st.date_input("📅 Rango de fechas para consultar", key="fecha_tab2", value=(datetime(2024, 5, 1), datetime(2024, 5, 2)))
+            fecha = st.date_input("📅 Selecciona una fecha para consultar", key="fecha_tab2")
 
-            if len(fechas) == 2:
-                fecha_inicio = fechas[0].strftime("%Y-%m-%d")
-                fecha_fin = fechas[1].strftime("%Y-%m-%d")
+            if fecha:
+                fecha_str = fecha.strftime("%Y-%m-%d")
 
                 # Nuevas Altas
                 df_altas = consultar(f"""
-                    SELECT DATE(ts_creation) as fecha, COUNT(*) as nuevas_altas
+                    SELECT COUNT(*) as nuevas_altas
                     FROM plasma_core.users 
-                    WHERE ts_creation BETWEEN '{fecha_inicio} 00:00:00' AND '{fecha_fin} 23:59:59'
-                    GROUP BY fecha ORDER BY fecha
+                    WHERE ts_creation BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59'
                 """)
-                total_altas = df_altas['nuevas_altas'].sum() if not df_altas.empty else 0
-                st.metric("👥 Nuevas Altas", f"{total_altas:,}")
+                st.metric("👥 Nuevas Altas en el Día", f"{df_altas.iloc[0, 0]:,}")
 
                 # Depósitos
                 df_depositos = consultar(f"""
-                    SELECT fecha, COUNT(*) AS total_transacciones, 
+                    SELECT COUNT(*) AS total_transacciones, 
                            AVG(amount) AS promedio_amount,
                            SUM(amount) AS total_amount
                     FROM (
-                        SELECT DATE(ts_commit) AS fecha, amount FROM plasma_payments.nico_transactions
-                        WHERE ts_commit BETWEEN '{fecha_inicio} 00:00:00' AND '{fecha_fin} 23:59:59'
+                        SELECT amount FROM plasma_payments.nico_transactions
+                        WHERE ts_commit BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59'
                         UNION ALL
-                        SELECT DATE(ts_commit) AS fecha, amount FROM plasma_payments.payphone_transactions
-                        WHERE ts_commit BETWEEN '{fecha_inicio} 00:00:00' AND '{fecha_fin} 23:59:59'
+                        SELECT amount FROM plasma_payments.payphone_transactions
+                        WHERE ts_commit BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59'
                     ) AS transacciones
-                    GROUP BY fecha ORDER BY fecha
                 """)
-                total_depositos = df_depositos['total_amount'].sum() if not df_depositos.empty else 0
-                st.metric("💰 Total Depósitos", f"${total_depositos:,.2f}")
+                st.metric("💰 Depósitos Día", f"{df_depositos.iloc[0]['total_transacciones']:,}")
+                st.metric("💵 Importe Medio de Depósitos", f"${df_depositos.iloc[0]['promedio_amount']:,.2f}" if df_depositos.iloc[0]['promedio_amount'] else "-")
 
                 # Altas actuales
                 df_total = consultar("SELECT COUNT(*) AS total_usuarios FROM plasma_core.users;")
@@ -228,45 +224,34 @@ with tab2:
 
                 # Jugadores activos
                 df_jugadores = consultar(f"""
-                    SELECT DATE(re.ts) as fecha, COUNT(DISTINCT u.user_id) AS jugadores,
+                    SELECT COUNT(DISTINCT u.user_id) AS jugadores,
                            AVG(re.amount) AS importe_medio
                     FROM plasma_games.rounds_entries re
                     JOIN plasma_games.sessions s ON re.session_id = s.session_id
                     JOIN plasma_core.users u ON s.user_id = u.user_id
-                    WHERE re.ts BETWEEN '{fecha_inicio} 00:00:00' AND '{fecha_fin} 23:59:59'
+                    WHERE re.ts BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59'
                       AND re.`type` = 'BET'
-                    GROUP BY fecha ORDER BY fecha
                 """)
-                total_jugadores = df_jugadores['jugadores'].sum() if not df_jugadores.empty else 0
-                st.metric("🎮 Jugadores Activos", f"{total_jugadores:,}")
+                st.metric("🎮 Jugadores Día", f"{df_jugadores.iloc[0]['jugadores']:,}")
+                st.metric("💸 Importe Medio Jugado", f"${df_jugadores.iloc[0]['importe_medio']:,.2f}" if df_jugadores.iloc[0]['importe_medio'] else "-")
 
                 # GGR
                 df_ggr = consultar(f"""
-                    SELECT DATE(ts) as fecha,
+                    SELECT 
                         SUM(CASE WHEN `type` = 'BET' THEN amount ELSE 0 END) AS total_bet,
                         SUM(CASE WHEN `type` = 'WIN' THEN amount ELSE 0 END) AS total_win,
                         SUM(CASE WHEN `type` = 'BET' THEN amount ELSE 0 END) -
                         SUM(CASE WHEN `type` = 'WIN' THEN amount ELSE 0 END) AS ggr
                     FROM plasma_games.rounds_entries
-                    WHERE ts BETWEEN '{fecha_inicio} 00:00:00' AND '{fecha_fin} 23:59:59'
-                    GROUP BY fecha ORDER BY fecha
+                    WHERE ts BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59'
                 """)
-                total_ggr = df_ggr['ggr'].sum() if not df_ggr.empty else 0
-                st.metric("📊 GGR Acumulado", f"${total_ggr:,.2f}")
-
-                # Gráficos
-                st.markdown("### 📈 Evolución Diaria")
-                if not df_altas.empty:
-                    st.bar_chart(df_altas.set_index("fecha"))
-                if not df_depositos.empty:
-                    st.bar_chart(df_depositos.set_index("fecha")["total_amount"])
-                if not df_jugadores.empty:
-                    st.bar_chart(df_jugadores.set_index("fecha")["jugadores"])
-                if not df_ggr.empty:
-                    st.bar_chart(df_ggr.set_index("fecha")["ggr"])
+                st.metric("📊 GGR Día", f"${df_ggr.iloc[0]['ggr']:,.2f}" if df_ggr.iloc[0]['ggr'] else "-")
 
         except IndexError:
             st.warning("⚠️ No se pudo procesar la fecha seleccionada. Intenta con otra fecha o revisa la conexión a la base de datos.")
+        except mysql.connector.Error as e:
+            st.error(f"❌ Error de conexión con la base de datos: {e}")
+
 
 
 
