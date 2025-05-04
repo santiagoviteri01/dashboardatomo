@@ -191,7 +191,6 @@ with tab2:
 
         try:
             fecha = st.date_input("📅 Selecciona una fecha para consultar", key="fecha_tab2")
-
             clientes_disponibles = consultar("SELECT DISTINCT user_id, CONCAT(firstname, ' ', lastname) AS nombre FROM plasma_core.users ORDER BY nombre ASC")
             cliente_opciones = ["Todos"] + clientes_disponibles["user_id"].dropna().astype(str).tolist()
             cliente_seleccionado = st.selectbox("🧍‍♂️ Selecciona Cliente por ID", cliente_opciones)
