@@ -3,6 +3,8 @@ import pandas as pd
 import re
 import difflib
 import mysql.connector
+from datetime import datetime
+
 
 st.set_page_config(page_title="Dashboard de Márgenes", layout="wide")
 st.title("📊 Panel de Control")
