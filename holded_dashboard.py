@@ -166,81 +166,91 @@ with tab1:
         st.info("⬆️ Por favor, sube un archivo Excel para continuar.")
 
 with tab2:
-    # TAB 2 - DATOS PLATAFORMA
-    st.header("📈 Análisis de Actividad Plataforma")
+    with st.container():
+        st.header("🎮 Análisis de Actividad Plataforma (Tab 2)")
     
-    # Fecha seleccionable por el usuario
-    dia_consulta = st.date_input("Selecciona el día para la consulta", value=datetime.today())
-    dia_inicio = dia_consulta.strftime("%Y-%m-%d 00:00:00")
-    dia_fin = dia_consulta.strftime("%Y-%m-%d 23:59:59")
+        dia_consulta = st.date_input("Selecciona el día a consultar", value=datetime.today())
+        dia_inicio = dia_consulta.strftime("%Y-%m-%d 00:00:00")
+        dia_fin = dia_consulta.strftime("%Y-%m-%d 23:59:59")
     
-    try:
-        conn = mysql.connector.connect(
-            host=st.secrets["db"]["host"],
-            user=st.secrets["db"]["user"],
-            password=st.secrets["db"]["password"]
-        )
+        cliente = st.selectbox("Selecciona el cliente (opcional)", options=["Todos", "METRONIA S.A", "LOTTERY", "OCTAVIAN SRL", "VITAL GAMES PROJECT SLOT SRL", "PIN-PROJEKT D.O.O", "APOLLO SOFT,S.R.O.", "PSM TECH S.R.L.", "SEVEN A.B.C SOLUTION CH", "PROJEKT SERVICE SRL", "MYMOON LTD", "WORLDMATCH,SRL", "ARRISE SOLUTIONS LIMITED", "STREET WEB SRL", "TALENTA LABS SRL", "EVOPLAY ENTERTAIMENT LTD", "SAMINO GAMING NV", "ANAKATECH", "ALTENAR SOFTWARE LIMITED", "MIRAGE CORPORATION NV", "EDICT MALTA LIMITED", "MONGIBELLO TECH SRL", "AD CONSULTING S.P.A.", "GAMIFY TECH OOD"], index=0)
     
-        cursor = conn.cursor()
+        try:
+            conn = mysql.connector.connect(
+                host=st.secrets["db"]["host"],
+                user=st.secrets["db"]["user"],
+                password=st.secrets["db"]["password"]
+            )
+            cursor = conn.cursor()
     
-        # 1. Nuevas altas
-        cursor.execute(f"""
-            SELECT COUNT(*) FROM plasma_core.users
-            WHERE ts_creation >= '{dia_inicio}' AND ts_creation < '{dia_fin}'
-        """)
-        nuevas_altas = cursor.fetchone()[0]
+            # Nuevas altas
+            cursor.execute(f"""
+                SELECT COUNT(*) FROM plasma_core.users
+                WHERE ts_creation BETWEEN '{dia_inicio}' AND '{dia_fin}'
+            """)
+            nuevas_altas = cursor.fetchone()[0]
     
-        # 2. Primeros depósitos e importe medio
-        cursor.execute(f"""
-            SELECT COUNT(*) AS total_transacciones,
-                   AVG(amount) AS promedio_amount
-            FROM (
-                SELECT amount FROM plasma_payments.nico_transactions
-                WHERE ts_commit BETWEEN '{dia_inicio}' AND '{dia_fin}'
-                UNION ALL
-                SELECT amount FROM plasma_payments.payphone_transactions
-                WHERE ts_commit BETWEEN '{dia_inicio}' AND '{dia_fin}'
-            ) AS todas_transacciones
-        """)
-        total_depositos, importe_medio_depositos = cursor.fetchone()
+            # Primeros depósitos e importe medio
+            cursor.execute(f"""
+                SELECT COUNT(*) AS total_transacciones,
+                       AVG(amount) AS promedio_amount
+                FROM (
+                    SELECT amount FROM plasma_payments.nico_transactions
+                    WHERE ts_commit BETWEEN '{dia_inicio}' AND '{dia_fin}'
+                    UNION ALL
+                    SELECT amount FROM plasma_payments.payphone_transactions
+                    WHERE ts_commit BETWEEN '{dia_inicio}' AND '{dia_fin}'
+                ) AS todas_transacciones
+            """)
+            total_depositos, importe_medio_depositos = cursor.fetchone()
     
-        # 3. Altas actuales
-        cursor.execute("SELECT COUNT(*) FROM plasma_core.users")
-        altas_actuales = cursor.fetchone()[0]
+            # Altas actuales
+            cursor.execute("SELECT COUNT(*) FROM plasma_core.users")
+            altas_actuales = cursor.fetchone()[0]
     
-        # 4. Jugadores activos e importe medio apostado
-        cursor.execute(f"""
-            SELECT COUNT(DISTINCT u.user_id), AVG(re.amount)
-            FROM plasma_games.rounds_entries re
-            JOIN plasma_games.sessions s ON re.session_id = s.session_id
-            JOIN plasma_core.users u ON s.user_id = u.user_id
-            WHERE re.ts BETWEEN '{dia_inicio}' AND '{dia_fin}' AND re.type = 'BET'
-        """)
-        jugadores_dia, importe_medio_jugado = cursor.fetchone()
+            # Jugadores activos e importe medio apostado (por cliente si aplica)
+            consulta_jugadores = f"""
+                SELECT COUNT(DISTINCT u.user_id), AVG(re.amount)
+                FROM plasma_games.rounds_entries re
+                JOIN plasma_games.sessions s ON re.session_id = s.session_id
+                JOIN plasma_core.users u ON s.user_id = u.user_id
+                WHERE re.ts BETWEEN '{dia_inicio}' AND '{dia_fin}' AND re.type = 'BET'
+            """
+            if cliente != "Todos":
+                consulta_jugadores += f" AND u.affiliate_id = '{cliente}'"
+            cursor.execute(consulta_jugadores)
+            jugadores_dia, importe_medio_jugado = cursor.fetchone()
     
-        # 5. GGR del día X
-        cursor.execute(f"""
-            SELECT 
-                SUM(CASE WHEN re.type = 'BET' THEN re.amount ELSE 0 END) AS total_bet,
-                SUM(CASE WHEN re.type = 'WIN' THEN re.amount ELSE 0 END) AS total_win,
-                SUM(CASE WHEN re.type = 'BET' THEN re.amount ELSE 0 END) -
-                SUM(CASE WHEN re.type = 'WIN' THEN re.amount ELSE 0 END) AS ggr
-            FROM plasma_games.rounds_entries re
-            WHERE ts BETWEEN '{dia_inicio}' AND '{dia_fin}'
-        """)
-        total_bet, total_win, ggr = cursor.fetchone()
+            # GGR del día (opcional por cliente si disponible)
+            cursor.execute(f"""
+                SELECT 
+                    SUM(CASE WHEN re.type = 'BET' THEN re.amount ELSE 0 END),
+                    SUM(CASE WHEN re.type = 'WIN' THEN re.amount ELSE 0 END),
+                    SUM(CASE WHEN re.type = 'BET' THEN re.amount ELSE 0 END) -
+                    SUM(CASE WHEN re.type = 'WIN' THEN re.amount ELSE 0 END)
+                FROM plasma_games.rounds_entries re
+                WHERE ts BETWEEN '{dia_inicio}' AND '{dia_fin}'
+            """)
+            total_bet, total_win, ggr = cursor.fetchone()
     
-        # Mostrar métricas
-        st.metric("📥 Nuevas Altas", nuevas_altas)
-        st.metric("💰 Primeros Depósitos", total_depositos)
-        st.metric("💵 Importe Medio de Depósitos", f"${importe_medio_depositos:,.2f}" if importe_medio_depositos else "-" )
-        st.metric("🧍‍♂️ Altas Actuales", altas_actuales)
-        st.metric("🎮 Jugadores Activos en el Día", jugadores_dia)
-        st.metric("💸 Importe Medio Jugado", f"${importe_medio_jugado:,.2f}" if importe_medio_jugado else "-" )
-        st.metric("📊 GGR", f"${ggr:,.2f}")
+            cursor.close()
+            conn.close()
     
-        cursor.close()
-        conn.close()
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("📥 Nuevas Altas", nuevas_altas)
+                st.metric("💰 Primeros Depósitos", total_depositos)
+                st.metric("🧍‍♂️ Altas Actuales", altas_actuales)
     
-    except Exception as e:
-        st.error(f"Error de conexión o consulta: {e}")
+            with col2:
+                st.metric("💵 Importe Medio de Depósitos", f"${importe_medio_depositos:,.2f}" if importe_medio_depositos is not None else "-")
+                st.metric("🎮 Jugadores Activos en el Día", jugadores_dia)
+                st.metric("💸 Importe Medio Jugado", f"${importe_medio_jugado:,.2f}" if importe_medio_jugado is not None else "-")
+    
+            with col3:
+                st.metric("🎯 Total BET", f"${total_bet:,.2f}" if total_bet is not None else "-")
+                st.metric("🎯 Total WIN", f"${total_win:,.2f}" if total_win is not None else "-")
+                st.metric("📊 GGR", f"${ggr:,.2f}" if ggr is not None else "-")
+    
+        except Exception as e:
+            st.warning(f"⚠️ Error en la conexión o consulta SQL: {e}")
