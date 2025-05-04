@@ -168,6 +168,9 @@ with tab1:
 
 with tab2:
     with st.container():
+        st.subheader("🧪 Primeros 10 registros de usuarios")
+        df_preview = consultar("SELECT * FROM plasma_core.users LIMIT 10")
+        st.dataframe(df_preview)
         st.header("\U0001F4CA Métricas de la Plataforma de Juego")
 
         def consultar(sql):
