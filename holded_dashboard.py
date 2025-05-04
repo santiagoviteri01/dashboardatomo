@@ -5,7 +5,7 @@ import re
 
 
 st.set_page_config(page_title="Dashboard de Márgenes", layout="wide")
-st.title("📊 Dashboard de Márgenes Comerciales")
+st.title("📊 Dashboard Financiero Holded")
 
 archivo = st.file_uploader("Sube el archivo Excel generado por Holded", type=["xlsx"])
 
