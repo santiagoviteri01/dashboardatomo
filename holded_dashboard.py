@@ -184,6 +184,8 @@ with tab2:
             cursor.execute(sql)
             datos = cursor.fetchall()
             columnas = [col[0] for col in cursor.description]
+            cursor.close()
+            conn.close()  # <-- cierre explícito
             return pd.DataFrame(datos, columns=columnas)
 
         try:
