@@ -176,14 +176,14 @@ with tab2:
             )
     
          def consultar(sql):
-            conn = conectar_db()
-            cursor = conn.cursor()
-            cursor.execute(sql)
-            datos = cursor.fetchall()
-            columnas = [col[0] for col in cursor.description]
-            cursor.close()
-            conn.close()  # <-- cierre explícito
-            return pd.DataFrame(datos, columns=columnas)
+                conn = conectar_db()
+                cursor = conn.cursor()
+                cursor.execute(sql)
+                datos = cursor.fetchall()
+                columnas = [col[0] for col in cursor.description]
+                cursor.close()
+                conn.close()  # <-- cierre explícito
+                return pd.DataFrame(datos, columns=columnas)
     
         fecha = st.date_input("📅 Selecciona una fecha para consultar")
     
