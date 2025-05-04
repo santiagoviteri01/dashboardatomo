@@ -164,77 +164,81 @@ with tab1:
         st.info("⬆️ Por favor, sube un archivo Excel para continuar.")
 
 with tab2:
-    st.subheader("🔌 Datos en Tiempo Real desde la DB")
-
-    @st.cache_resource
-    def conectar_db():
-        return mysql.connector.connect(
+    # TAB 2 - DATOS PLATAFORMA
+    st.header("📈 Análisis de Actividad Plataforma")
+    
+    # Fecha seleccionable por el usuario
+    dia_consulta = st.date_input("Selecciona el día para la consulta", value=datetime.today())
+    dia_inicio = dia_consulta.strftime("%Y-%m-%d 00:00:00")
+    dia_fin = dia_consulta.strftime("%Y-%m-%d 23:59:59")
+    
+    try:
+        conn = mysql.connector.connect(
             host=st.secrets["db"]["host"],
             user=st.secrets["db"]["user"],
             password=st.secrets["db"]["password"]
         )
-
-    def consultar(sql):
-        conn = conectar_db()
+    
         cursor = conn.cursor()
-        cursor.execute(sql)
-        datos = cursor.fetchall()
-        columnas = [col[0] for col in cursor.description]
-        return pd.DataFrame(datos, columns=columnas)
-
-    fecha = st.date_input("📅 Selecciona una fecha para consultar")
-
-    if fecha:
-        fecha_str = fecha.strftime("%Y-%m-%d")
-
-        st.markdown("### 👤 Nuevas Altas")
-        df_altas = consultar(f"""
-            SELECT * FROM plasma_core.users 
-            WHERE ts_creation BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59'
+    
+        # 1. Nuevas altas
+        cursor.execute(f"""
+            SELECT COUNT(*) FROM plasma_core.users
+            WHERE ts_creation >= '{dia_inicio}' AND ts_creation < '{dia_fin}'
         """)
-        st.dataframe(df_altas)
-
-        st.markdown("### 💳 Depósitos del Día")
-        df_depositos = consultar(f"""
+        nuevas_altas = cursor.fetchone()[0]
+    
+        # 2. Primeros depósitos e importe medio
+        cursor.execute(f"""
             SELECT COUNT(*) AS total_transacciones,
                    AVG(amount) AS promedio_amount
             FROM (
                 SELECT amount FROM plasma_payments.nico_transactions
-                WHERE ts_commit BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59'
+                WHERE ts_commit BETWEEN '{dia_inicio}' AND '{dia_fin}'
                 UNION ALL
                 SELECT amount FROM plasma_payments.payphone_transactions
-                WHERE ts_commit BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59'
+                WHERE ts_commit BETWEEN '{dia_inicio}' AND '{dia_fin}'
             ) AS todas_transacciones
         """)
-        st.dataframe(df_depositos)
-
-        st.markdown("### 👥 Total Altas")
-        df_total = consultar("SELECT COUNT(*) AS total_usuarios FROM plasma_core.users;")
-        st.metric("Usuarios Totales", df_total.iloc[0, 0])
-
-        st.markdown("### 🎮 Clientes que Jugaron")
-        df_jugadores = consultar(f"""
-            SELECT u.user_id, u.firstname, u.lastname, u.email,
-                   COUNT(re.round_id) AS rondas_jugadas,
-                   AVG(re.amount) AS importe_promedio
+        total_depositos, importe_medio_depositos = cursor.fetchone()
+    
+        # 3. Altas actuales
+        cursor.execute("SELECT COUNT(*) FROM plasma_core.users")
+        altas_actuales = cursor.fetchone()[0]
+    
+        # 4. Jugadores activos e importe medio apostado
+        cursor.execute(f"""
+            SELECT COUNT(DISTINCT u.user_id), AVG(re.amount)
             FROM plasma_games.rounds_entries re
             JOIN plasma_games.sessions s ON re.session_id = s.session_id
             JOIN plasma_core.users u ON s.user_id = u.user_id
-            WHERE re.ts BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59'
-              AND re.`type` = 'BET'
-            GROUP BY u.user_id, u.firstname, u.lastname, u.email
-            ORDER BY rondas_jugadas DESC
+            WHERE re.ts BETWEEN '{dia_inicio}' AND '{dia_fin}' AND re.type = 'BET'
         """)
-        st.dataframe(df_jugadores)
-
-        st.markdown("### 💵 GGR del Día")
-        df_ggr = consultar(f"""
+        jugadores_dia, importe_medio_jugado = cursor.fetchone()
+    
+        # 5. GGR del día X
+        cursor.execute(f"""
             SELECT 
-                SUM(CASE WHEN re.`type` = 'BET' THEN re.amount ELSE 0 END) AS total_bet,
-                SUM(CASE WHEN re.`type` = 'WIN' THEN re.amount ELSE 0 END) AS total_win,
-                SUM(CASE WHEN re.`type` = 'BET' THEN re.amount ELSE 0 END) -
-                SUM(CASE WHEN re.`type` = 'WIN' THEN re.amount ELSE 0 END) AS ggr
+                SUM(CASE WHEN re.type = 'BET' THEN re.amount ELSE 0 END) AS total_bet,
+                SUM(CASE WHEN re.type = 'WIN' THEN re.amount ELSE 0 END) AS total_win,
+                SUM(CASE WHEN re.type = 'BET' THEN re.amount ELSE 0 END) -
+                SUM(CASE WHEN re.type = 'WIN' THEN re.amount ELSE 0 END) AS ggr
             FROM plasma_games.rounds_entries re
-            WHERE ts BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59'
+            WHERE ts BETWEEN '{dia_inicio}' AND '{dia_fin}'
         """)
-        st.dataframe(df_ggr)
+        total_bet, total_win, ggr = cursor.fetchone()
+    
+        # Mostrar métricas
+        st.metric("📥 Nuevas Altas", nuevas_altas)
+        st.metric("💰 Primeros Depósitos", total_depositos)
+        st.metric("💵 Importe Medio de Depósitos", f"${importe_medio_depositos:,.2f}" if importe_medio_depositos else "-" )
+        st.metric("🧍‍♂️ Altas Actuales", altas_actuales)
+        st.metric("🎮 Jugadores Activos en el Día", jugadores_dia)
+        st.metric("💸 Importe Medio Jugado", f"${importe_medio_jugado:,.2f}" if importe_medio_jugado else "-" )
+        st.metric("📊 GGR", f"${ggr:,.2f}")
+    
+        cursor.close()
+        conn.close()
+    
+    except Exception as e:
+        st.error(f"Error de conexión o consulta: {e}")
