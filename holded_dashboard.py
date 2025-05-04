@@ -17,7 +17,7 @@ archivo = st.file_uploader("Sube el archivo Excel generado por Holded", type=["x
 # ===================
 # 🧩 TABS PRINCIPALES
 # ===================
-tab1, tab2 ,tab3= st.tabs(["📈 Márgenes Comerciales", "🧪 Datos Plataforma (DB)","🧪 Datos Plataforma (DB) v2"])
+tab1, tab2 = st.tabs(["📈 Márgenes Comerciales", "🧪 Datos Plataforma (DB) v2"])
 
 with tab1:
 
@@ -165,84 +165,8 @@ with tab1:
     else:
         st.info("⬆️ Por favor, sube un archivo Excel para continuar.")
 
-with tab2:
-    with st.container():
-        @st.cache_resource
-        def conectar_db():
-            return mysql.connector.connect(
-                host=st.secrets["db"]["host"],
-                user=st.secrets["db"]["user"],
-                password=st.secrets["db"]["password"]
-            )
-    
-         def consultar(sql):
-                conn = conectar_db()
-                cursor = conn.cursor()
-                cursor.execute(sql)
-                datos = cursor.fetchall()
-                columnas = [col[0] for col in cursor.description]
-                cursor.close()
-                conn.close()  # <-- cierre explícito
-                return pd.DataFrame(datos, columns=columnas)
-    
-        fecha = st.date_input("📅 Selecciona una fecha para consultar")
-    
-        if fecha:
-            fecha_str = fecha.strftime("%Y-%m-%d")
-    
-            st.markdown("### 👤 Nuevas Altas")
-            df_altas = consultar(f"""
-                SELECT * FROM plasma_core.users 
-                WHERE ts_creation BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59'
-            """)
-            st.dataframe(df_altas)
-    
-            st.markdown("### 💳 Depósitos del Día")
-            df_depositos = consultar(f"""
-                SELECT COUNT(*) AS total_transacciones,
-                       AVG(amount) AS promedio_amount
-                FROM (
-                    SELECT amount FROM plasma_payments.nico_transactions
-                    WHERE ts_commit BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59'
-                    UNION ALL
-                    SELECT amount FROM plasma_payments.payphone_transactions
-                    WHERE ts_commit BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59'
-                ) AS todas_transacciones
-            """)
-            st.dataframe(df_depositos)
-    
-            st.markdown("### 👥 Total Altas")
-            df_total = consultar("SELECT COUNT(*) AS total_usuarios FROM plasma_core.users;")
-            st.metric("Usuarios Totales", df_total.iloc[0, 0])
-    
-            st.markdown("### 🎮 Clientes que Jugaron")
-            df_jugadores = consultar(f"""
-                SELECT u.user_id, u.firstname, u.lastname, u.email,
-                       COUNT(re.round_id) AS rondas_jugadas,
-                       AVG(re.amount) AS importe_promedio
-                FROM plasma_games.rounds_entries re
-                JOIN plasma_games.sessions s ON re.session_id = s.session_id
-                JOIN plasma_core.users u ON s.user_id = u.user_id
-                WHERE re.ts BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59'
-                  AND re.type = 'BET'
-                GROUP BY u.user_id, u.firstname, u.lastname, u.email
-                ORDER BY rondas_jugadas DESC
-            """)
-            st.dataframe(df_jugadores)
-    
-            st.markdown("### 💵 GGR del Día")
-            df_ggr = consultar(f"""
-                SELECT 
-                    SUM(CASE WHEN re.type = 'BET' THEN re.amount ELSE 0 END) AS total_bet,
-                    SUM(CASE WHEN re.type = 'WIN' THEN re.amount ELSE 0 END) AS total_win,
-                    SUM(CASE WHEN re.type = 'BET' THEN re.amount ELSE 0 END) -
-                    SUM(CASE WHEN re.type = 'WIN' THEN re.amount ELSE 0 END) AS ggr
-                FROM plasma_games.rounds_entries re
-                WHERE ts BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59'
-            """)
-            st.dataframe(df_ggr) 
 
-with tab3:
+with tab2:
     with st.container():
         st.header("📊 Métricas de la Plataforma de Juego")
 
