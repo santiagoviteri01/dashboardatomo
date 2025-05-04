@@ -175,12 +175,14 @@ with tab2:
                 password=st.secrets["db"]["password"]
             )
     
-        def consultar(sql):
+         def consultar(sql):
             conn = conectar_db()
             cursor = conn.cursor()
             cursor.execute(sql)
             datos = cursor.fetchall()
             columnas = [col[0] for col in cursor.description]
+            cursor.close()
+            conn.close()  # <-- cierre explícito
             return pd.DataFrame(datos, columns=columnas)
     
         fecha = st.date_input("📅 Selecciona una fecha para consultar")
