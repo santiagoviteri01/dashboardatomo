@@ -17,7 +17,7 @@ archivo = st.file_uploader("Sube el archivo Excel generado por Holded", type=["x
 # ===================
 # 🧩 TABS PRINCIPALES
 # ===================
-tab1, tab2 = st.tabs(["📈 Márgenes Comerciales", "🧪 Datos Plataforma (DB) v2"])
+tab1, tab2 = st.tabs(["📈 Márgenes Comerciales", "🧪 Datos Plataforma (DB)"])
 
 with tab1:
 
