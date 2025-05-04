@@ -190,6 +190,7 @@ with tab2:
 
         try:
             fecha = st.date_input("📅 Selecciona una fecha para consultar", key="fecha_tab2")
+            st.dataframe(consultar("SHOW COLUMNS FROM plasma_core.users"))
 
             clientes_disponibles = consultar("SELECT DISTINCT dni, CONCAT(firstname, ' ', lastname) AS nombre FROM plasma_core.users ORDER BY nombre ASC")
             cliente_opciones = ["Todos"] + clientes_disponibles["dni"].dropna().astype(str).tolist()
