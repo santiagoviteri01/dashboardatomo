@@ -191,7 +191,11 @@ with tab2:
         try:
             fecha = st.date_input("📅 Selecciona una fecha para consultar", key="fecha_tab2")
 
-            if fecha:
+            # Nuevo filtro por cliente
+            clientes_disponibles = consultar("SELECT DISTINCT firstname FROM plasma_core.users ORDER BY firstname ASC")
+            cliente_seleccionado = st.selectbox("🧍‍♂️ Selecciona Cliente", clientes_disponibles["firstname"].tolist())
+
+            if fecha and cliente_seleccionado:
                 fecha_str = fecha.strftime("%Y-%m-%d")
 
                 # Nuevas Altas
@@ -199,6 +203,7 @@ with tab2:
                     SELECT COUNT(*) as nuevas_altas
                     FROM plasma_core.users 
                     WHERE ts_creation BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59'
+                    AND firstname = '{cliente_seleccionado}'
                 """)
                 st.metric("👥 Nuevas Altas en el Día", f"{df_altas.iloc[0, 0]:,}")
 
@@ -210,9 +215,11 @@ with tab2:
                     FROM (
                         SELECT amount FROM plasma_payments.nico_transactions
                         WHERE ts_commit BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59'
+                        AND user_id IN (SELECT user_id FROM plasma_core.users WHERE firstname = '{cliente_seleccionado}')
                         UNION ALL
                         SELECT amount FROM plasma_payments.payphone_transactions
                         WHERE ts_commit BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59'
+                        AND user_id IN (SELECT user_id FROM plasma_core.users WHERE firstname = '{cliente_seleccionado}')
                     ) AS transacciones
                 """)
                 st.metric("💰 Depósitos Día", f"{df_depositos.iloc[0]['total_transacciones']:,}")
@@ -220,7 +227,11 @@ with tab2:
                 st.metric("💳 Valor Total Depósitos", f"${df_depositos.iloc[0]['total_amount']:,.2f}" if df_depositos.iloc[0]['total_amount'] else "-")
 
                 # Altas actuales
-                df_total = consultar("SELECT COUNT(*) AS total_usuarios FROM plasma_core.users;")
+                df_total = consultar(f"""
+                    SELECT COUNT(*) AS total_usuarios 
+                    FROM plasma_core.users
+                    WHERE firstname = '{cliente_seleccionado}'
+                """)
                 st.metric("🧍‍♂️ Altas Actuales", f"{df_total.iloc[0, 0]:,}")
 
                 # Jugadores activos
@@ -232,6 +243,7 @@ with tab2:
                     JOIN plasma_core.users u ON s.user_id = u.user_id
                     WHERE re.ts BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59'
                       AND re.`type` = 'BET'
+                      AND u.firstname = '{cliente_seleccionado}'
                 """)
                 st.metric("🎮 Jugadores Día", f"{df_jugadores.iloc[0]['jugadores']:,}")
                 st.metric("💸 Importe Medio Jugado", f"${df_jugadores.iloc[0]['importe_medio']:,.2f}" if df_jugadores.iloc[0]['importe_medio'] else "-")
@@ -245,6 +257,11 @@ with tab2:
                         SUM(CASE WHEN `type` = 'WIN' THEN amount ELSE 0 END) AS ggr
                     FROM plasma_games.rounds_entries
                     WHERE ts BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59'
+                    AND session_id IN (
+                        SELECT session_id FROM plasma_games.sessions s
+                        JOIN plasma_core.users u ON s.user_id = u.user_id
+                        WHERE u.firstname = '{cliente_seleccionado}'
+                    )
                 """)
                 st.metric("🎯 Total BET", f"${df_ggr.iloc[0]['total_bet']:,.2f}" if df_ggr.iloc[0]['total_bet'] else "-")
                 st.metric("🎯 Total WIN", f"${df_ggr.iloc[0]['total_win']:,.2f}" if df_ggr.iloc[0]['total_win'] else "-")
@@ -254,6 +271,7 @@ with tab2:
             st.warning("⚠️ No se pudo procesar la fecha seleccionada. Intenta con otra fecha o revisa la conexión a la base de datos.")
         except mysql.connector.Error as e:
             st.error(f"❌ Error de conexión con la base de datos: {e}")
+
 
 
 
