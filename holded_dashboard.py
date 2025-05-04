@@ -184,8 +184,6 @@ with tab2:
             cursor.execute(sql)
             datos = cursor.fetchall()
             columnas = [col[0] for col in cursor.description]
-            cursor.close()
-            conn.close()
             return pd.DataFrame(datos, columns=columnas)
 
         try:
@@ -194,17 +192,17 @@ with tab2:
             if fecha:
                 fecha_str = fecha.strftime("%Y-%m-%d")
 
-                # Nuevas Altas
+                st.markdown("### 👤 Nuevas Altas")
                 df_altas = consultar(f"""
-                    SELECT COUNT(*) as nuevas_altas
-                    FROM plasma_core.users 
+                    SELECT * FROM plasma_core.users 
                     WHERE ts_creation BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59'
                 """)
-                st.metric("👥 Nuevas Altas en el Día", f"{df_altas.iloc[0, 0]:,}")
+                st.dataframe(df_altas)
+                st.metric("👥 Total Nuevas Altas", df_altas.shape[0])
 
-                # Depósitos
+                st.markdown("### 💳 Primeros Depósitos y su Importe Medio")
                 df_depositos = consultar(f"""
-                    SELECT COUNT(*) AS total_transacciones, 
+                    SELECT COUNT(*) AS total_transacciones,
                            AVG(amount) AS promedio_amount,
                            SUM(amount) AS total_amount
                     FROM (
@@ -213,44 +211,60 @@ with tab2:
                         UNION ALL
                         SELECT amount FROM plasma_payments.payphone_transactions
                         WHERE ts_commit BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59'
-                    ) AS transacciones
+                    ) AS todas_transacciones
                 """)
-                st.metric("💰 Depósitos Día", f"{df_depositos.iloc[0]['total_transacciones']:,}")
-                st.metric("💵 Importe Medio de Depósitos", f"${df_depositos.iloc[0]['promedio_amount']:,.2f}" if df_depositos.iloc[0]['promedio_amount'] else "-")
+                st.dataframe(df_depositos)
+                st.metric("💰 Primeros Depósitos", df_depositos.iloc[0]['total_transacciones'])
+                st.metric("💵 Importe Medio de Depósitos", f"${df_depositos.iloc[0]['promedio_amount']:.2f}" if pd.notna(df_depositos.iloc[0]['promedio_amount']) else "-")
+                st.metric("💳 Valor Total Depósitos", f"${df_depositos.iloc[0]['total_amount']:.2f}" if pd.notna(df_depositos.iloc[0]['total_amount']) else "-")
 
-                # Altas actuales
+                st.markdown("### 📈 Altas Actuales")
                 df_total = consultar("SELECT COUNT(*) AS total_usuarios FROM plasma_core.users;")
-                st.metric("🧍‍♂️ Altas Actuales", f"{df_total.iloc[0, 0]:,}")
+                st.metric("🧍‍♂️ Altas Actuales", df_total.iloc[0, 0])
 
-                # Jugadores activos
+                st.markdown("### 🎮 Clientes que Jugaron el Día")
                 df_jugadores = consultar(f"""
-                    SELECT COUNT(DISTINCT u.user_id) AS jugadores,
-                           AVG(re.amount) AS importe_medio
+                    SELECT u.user_id, u.firstname, u.lastname, u.email,
+                           COUNT(re.round_id) AS rondas_jugadas,
+                           AVG(re.amount) AS importe_promedio
                     FROM plasma_games.rounds_entries re
                     JOIN plasma_games.sessions s ON re.session_id = s.session_id
                     JOIN plasma_core.users u ON s.user_id = u.user_id
                     WHERE re.ts BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59'
                       AND re.`type` = 'BET'
+                    GROUP BY u.user_id, u.firstname, u.lastname, u.email
+                    ORDER BY rondas_jugadas DESC
                 """)
-                st.metric("🎮 Jugadores Día", f"{df_jugadores.iloc[0]['jugadores']:,}")
-                st.metric("💸 Importe Medio Jugado", f"${df_jugadores.iloc[0]['importe_medio']:,.2f}" if df_jugadores.iloc[0]['importe_medio'] else "-")
+                st.dataframe(df_jugadores)
+                st.metric("🎮 Jugadores Activos", df_jugadores.shape[0])
+                st.metric("💸 Importe Medio Jugado", f"${df_jugadores['importe_promedio'].mean():.2f}" if not df_jugadores.empty else "-")
 
-                # GGR
+                st.markdown("### 🧾 GGR del Día")
                 df_ggr = consultar(f"""
                     SELECT 
-                        SUM(CASE WHEN `type` = 'BET' THEN amount ELSE 0 END) AS total_bet,
-                        SUM(CASE WHEN `type` = 'WIN' THEN amount ELSE 0 END) AS total_win,
-                        SUM(CASE WHEN `type` = 'BET' THEN amount ELSE 0 END) -
-                        SUM(CASE WHEN `type` = 'WIN' THEN amount ELSE 0 END) AS ggr
-                    FROM plasma_games.rounds_entries
+                        SUM(CASE WHEN re.`type` = 'BET' THEN re.amount ELSE 0 END) AS total_bet,
+                        SUM(CASE WHEN re.`type` = 'WIN' THEN re.amount ELSE 0 END) AS total_win,
+                        SUM(CASE WHEN re.`type` = 'BET' THEN re.amount ELSE 0 END) -
+                        SUM(CASE WHEN re.`type` = 'WIN' THEN re.amount ELSE 0 END) AS ggr
+                    FROM plasma_games.rounds_entries re
                     WHERE ts BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59'
                 """)
-                st.metric("📊 GGR Día", f"${df_ggr.iloc[0]['ggr']:,.2f}" if df_ggr.iloc[0]['ggr'] else "-")
+                st.dataframe(df_ggr)
+                st.metric("🎯 Total BET", f"${df_ggr.iloc[0]['total_bet']:.2f}" if pd.notna(df_ggr.iloc[0]['total_bet']) else "-")
+                st.metric("🎯 Total WIN", f"${df_ggr.iloc[0]['total_win']:.2f}" if pd.notna(df_ggr.iloc[0]['total_win']) else "-")
+                st.metric("📊 GGR", f"${df_ggr.iloc[0]['ggr']:.2f}" if pd.notna(df_ggr.iloc[0]['ggr']) else "-")
+
+                st.markdown("### 📊 Gráficos Resumen")
+                col1, col2 = st.columns(2)
+                with col1:
+                    if not df_depositos.empty:
+                        st.bar_chart(df_depositos[['total_transacciones', 'promedio_amount']])
+                with col2:
+                    if not df_jugadores.empty:
+                        st.line_chart(df_jugadores[['rondas_jugadas', 'importe_promedio']])
 
         except IndexError:
             st.warning("⚠️ No se pudo procesar la fecha seleccionada. Intenta con otra fecha o revisa la conexión a la base de datos.")
-        except mysql.connector.Error as e:
-            st.error(f"❌ Error de conexión con la base de datos: {e}")
 
 
 
