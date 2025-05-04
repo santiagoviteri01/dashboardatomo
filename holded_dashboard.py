@@ -192,21 +192,25 @@ with tab2:
             fecha = st.date_input("📅 Selecciona una fecha para consultar", key="fecha_tab2")
 
             clientes_disponibles = consultar("SELECT DISTINCT firstname FROM plasma_core.users ORDER BY firstname ASC")
-            cliente_seleccionado = st.selectbox("🧍‍♂️ Selecciona Cliente", clientes_disponibles["firstname"].tolist())
+            opciones_clientes = ["Todos"] + clientes_disponibles["firstname"].dropna().unique().tolist()
+            cliente_seleccionado = st.selectbox("🧍‍♂️ Selecciona Cliente", opciones_clientes)
 
             actualizar = st.button("🔄 Actualizar")
 
             if fecha and cliente_seleccionado and actualizar:
                 fecha_str = fecha.strftime("%Y-%m-%d")
 
+                filtro_cliente_sql = "" if cliente_seleccionado == "Todos" else f"AND firstname = '{cliente_seleccionado}'"
+
                 df_altas = consultar(f"""
                     SELECT COUNT(*) as nuevas_altas
                     FROM plasma_core.users 
                     WHERE ts_creation BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59'
-                    AND firstname = '{cliente_seleccionado}'
+                    {filtro_cliente_sql}
                 """)
                 st.metric("👥 Nuevas Altas en el Día", f"{df_altas.iloc[0, 0]:,}")
 
+                subquery_filtro = "" if cliente_seleccionado == "Todos" else f"AND user_id IN (SELECT user_id FROM plasma_core.users WHERE firstname = '{cliente_seleccionado}')"
                 df_depositos = consultar(f"""
                     SELECT COUNT(*) AS total_transacciones, 
                            AVG(amount) AS promedio_amount,
@@ -214,11 +218,11 @@ with tab2:
                     FROM (
                         SELECT amount FROM plasma_payments.nico_transactions
                         WHERE ts_commit BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59'
-                        AND user_id IN (SELECT user_id FROM plasma_core.users WHERE firstname = '{cliente_seleccionado}')
+                        {subquery_filtro}
                         UNION ALL
                         SELECT amount FROM plasma_payments.payphone_transactions
                         WHERE ts_commit BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59'
-                        AND user_id IN (SELECT user_id FROM plasma_core.users WHERE firstname = '{cliente_seleccionado}')
+                        {subquery_filtro}
                     ) AS transacciones
                 """)
                 st.metric("💰 Depósitos Día", f"{df_depositos.iloc[0]['total_transacciones']:,}")
@@ -228,7 +232,7 @@ with tab2:
                 df_total = consultar(f"""
                     SELECT COUNT(*) AS total_usuarios 
                     FROM plasma_core.users
-                    WHERE firstname = '{cliente_seleccionado}'
+                    {f"WHERE firstname = '{cliente_seleccionado}'" if cliente_seleccionado != "Todos" else ""}
                 """)
                 st.metric("🧍‍♂️ Altas Actuales", f"{df_total.iloc[0, 0]:,}")
 
@@ -240,7 +244,7 @@ with tab2:
                     JOIN plasma_core.users u ON s.user_id = u.user_id
                     WHERE re.ts BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59'
                       AND re.`type` = 'BET'
-                      AND u.firstname = '{cliente_seleccionado}'
+                      {f"AND u.firstname = '{cliente_seleccionado}'" if cliente_seleccionado != "Todos" else ""}
                 """)
                 st.metric("🎮 Jugadores Día", f"{df_jugadores.iloc[0]['jugadores']:,}")
                 st.metric("💸 Importe Medio Jugado", f"${df_jugadores.iloc[0]['importe_medio']:,.2f}" if df_jugadores.iloc[0]['importe_medio'] else "-")
@@ -253,11 +257,7 @@ with tab2:
                         SUM(CASE WHEN `type` = 'WIN' THEN amount ELSE 0 END) AS ggr
                     FROM plasma_games.rounds_entries
                     WHERE ts BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59'
-                    AND session_id IN (
-                        SELECT session_id FROM plasma_games.sessions s
-                        JOIN plasma_core.users u ON s.user_id = u.user_id
-                        WHERE u.firstname = '{cliente_seleccionado}'
-                    )
+                    {f"AND session_id IN (SELECT session_id FROM plasma_games.sessions s JOIN plasma_core.users u ON s.user_id = u.user_id WHERE u.firstname = '{cliente_seleccionado}')" if cliente_seleccionado != "Todos" else ""}
                 """)
                 st.metric("🎯 Total BET", f"${df_ggr.iloc[0]['total_bet']:,.2f}" if df_ggr.iloc[0]['total_bet'] else "-")
                 st.metric("🎯 Total WIN", f"${df_ggr.iloc[0]['total_win']:,.2f}" if df_ggr.iloc[0]['total_win'] else "-")
