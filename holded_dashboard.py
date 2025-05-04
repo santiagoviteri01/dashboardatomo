@@ -190,10 +190,9 @@ with tab2:
 
         try:
             fecha = st.date_input("📅 Selecciona una fecha para consultar", key="fecha_tab2")
-            st.dataframe(consultar("SHOW COLUMNS FROM plasma_core.users"))
 
-            clientes_disponibles = consultar("SELECT DISTINCT dni, CONCAT(firstname, ' ', lastname) AS nombre FROM plasma_core.users ORDER BY nombre ASC")
-            cliente_opciones = ["Todos"] + clientes_disponibles["dni"].dropna().astype(str).tolist()
+            clientes_disponibles = consultar("SELECT DISTINCT document_id, CONCAT(firstname, ' ', lastname) AS nombre FROM plasma_core.users ORDER BY nombre ASC")
+            cliente_opciones = ["Todos"] + clientes_disponibles["document_id"].dropna().astype(str).tolist()
             cliente_seleccionado = st.selectbox("🧍‍♂️ Selecciona Cliente por Cédula", cliente_opciones)
 
             actualizar = st.button("🔄 Actualizar", disabled=not fecha)
@@ -201,7 +200,7 @@ with tab2:
             if fecha and cliente_seleccionado and actualizar:
                 fecha_str = fecha.strftime("%Y-%m-%d")
 
-                filtro_cliente_sql = "" if cliente_seleccionado == "Todos" else f"AND dni = '{cliente_seleccionado}'"
+                filtro_cliente_sql = "" if cliente_seleccionado == "Todos" else f"AND document_id = '{cliente_seleccionado}'"
 
                 df_altas = consultar(f"""
                     SELECT COUNT(*) as nuevas_altas
@@ -211,7 +210,7 @@ with tab2:
                 """)
                 st.metric("👥 Nuevas Altas en el Día", f"{df_altas.iloc[0, 0]:,}")
 
-                subquery_filtro = "" if cliente_seleccionado == "Todos" else f"AND user_id IN (SELECT user_id FROM plasma_core.users WHERE dni = '{cliente_seleccionado}')"
+                subquery_filtro = "" if cliente_seleccionado == "Todos" else f"AND user_id IN (SELECT user_id FROM plasma_core.users WHERE document_id = '{cliente_seleccionado}')"
                 df_depositos = consultar(f"""
                     SELECT COUNT(*) AS total_transacciones, 
                            AVG(amount) AS promedio_amount,
@@ -233,7 +232,7 @@ with tab2:
                 df_total = consultar(f"""
                     SELECT COUNT(*) AS total_usuarios 
                     FROM plasma_core.users
-                    {f"WHERE dni = '{cliente_seleccionado}'" if cliente_seleccionado != "Todos" else ""}
+                    {f"WHERE document_id = '{cliente_seleccionado}'" if cliente_seleccionado != "Todos" else ""}
                 """)
                 st.metric("🧍‍♂️ Altas Actuales", f"{df_total.iloc[0, 0]:,}")
 
@@ -245,7 +244,7 @@ with tab2:
                     JOIN plasma_core.users u ON s.user_id = u.user_id
                     WHERE re.ts BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59'
                       AND re.`type` = 'BET'
-                      {f"AND u.dni = '{cliente_seleccionado}'" if cliente_seleccionado != "Todos" else ""}
+                      {f"AND u.document_id = '{cliente_seleccionado}'" if cliente_seleccionado != "Todos" else ""}
                 """)
                 st.metric("🎮 Jugadores Día", f"{df_jugadores.iloc[0]['jugadores']:,}")
                 st.metric("💸 Importe Medio Jugado", f"${df_jugadores['importe_medio'].mean():,.2f}" if not df_jugadores.empty else "-")
@@ -258,7 +257,7 @@ with tab2:
                         SUM(CASE WHEN `type` = 'WIN' THEN amount ELSE 0 END) AS ggr
                     FROM plasma_games.rounds_entries
                     WHERE ts BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59'
-                    {f"AND session_id IN (SELECT session_id FROM plasma_games.sessions s JOIN plasma_core.users u ON s.user_id = u.user_id WHERE u.dni = '{cliente_seleccionado}')" if cliente_seleccionado != "Todos" else ""}
+                    {f"AND session_id IN (SELECT session_id FROM plasma_games.sessions s JOIN plasma_core.users u ON s.user_id = u.user_id WHERE u.document_id = '{cliente_seleccionado}')" if cliente_seleccionado != "Todos" else ""}
                 """)
                 st.metric("🎯 Total BET", f"${df_ggr.iloc[0]['total_bet']:,.2f}" if df_ggr.iloc[0]['total_bet'] else "-")
                 st.metric("🎯 Total WIN", f"${df_ggr.iloc[0]['total_win']:,.2f}" if df_ggr.iloc[0]['total_win'] else "-")
