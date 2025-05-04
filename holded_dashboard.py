@@ -168,37 +168,37 @@ with tab1:
 
 with tab2:
     with st.container():
-        st.header("📊 Métricas de la Plataforma de Juego")
-
-        @st.cache_resource
-        def conectar_db():
-            return mysql.connector.connect(
-                host=st.secrets["db"]["host"],
-                user=st.secrets["db"]["user"],
-                password=st.secrets["db"]["password"]
-            )
+        st.header("\U0001F4CA Métricas de la Plataforma de Juego")
 
         def consultar(sql):
-            conn = conectar_db()
-            cursor = conn.cursor()
-            cursor.execute(sql)
-            datos = cursor.fetchall()
-            columnas = [col[0] for col in cursor.description]
-            cursor.close()
-            conn.close()
-            return pd.DataFrame(datos, columns=columnas)
+            try:
+                conn = mysql.connector.connect(
+                    host=st.secrets["db"]["host"],
+                    user=st.secrets["db"]["user"],
+                    password=st.secrets["db"]["password"]
+                )
+                cursor = conn.cursor()
+                cursor.execute(sql)
+                datos = cursor.fetchall()
+                columnas = [col[0] for col in cursor.description]
+                cursor.close()
+                conn.close()
+                return pd.DataFrame(datos, columns=columnas)
+            except mysql.connector.Error as e:
+                st.error(f"❌ Error de conexión con la base de datos: {e}")
+                return pd.DataFrame()
 
         try:
             fecha = st.date_input("📅 Selecciona una fecha para consultar", key="fecha_tab2")
 
-            # Nuevo filtro por cliente
             clientes_disponibles = consultar("SELECT DISTINCT firstname FROM plasma_core.users ORDER BY firstname ASC")
             cliente_seleccionado = st.selectbox("🧍‍♂️ Selecciona Cliente", clientes_disponibles["firstname"].tolist())
 
-            if fecha and cliente_seleccionado:
+            actualizar = st.button("🔄 Actualizar")
+
+            if fecha and cliente_seleccionado and actualizar:
                 fecha_str = fecha.strftime("%Y-%m-%d")
 
-                # Nuevas Altas
                 df_altas = consultar(f"""
                     SELECT COUNT(*) as nuevas_altas
                     FROM plasma_core.users 
@@ -207,7 +207,6 @@ with tab2:
                 """)
                 st.metric("👥 Nuevas Altas en el Día", f"{df_altas.iloc[0, 0]:,}")
 
-                # Depósitos
                 df_depositos = consultar(f"""
                     SELECT COUNT(*) AS total_transacciones, 
                            AVG(amount) AS promedio_amount,
@@ -226,7 +225,6 @@ with tab2:
                 st.metric("💵 Importe Medio de Depósitos", f"${df_depositos.iloc[0]['promedio_amount']:,.2f}" if df_depositos.iloc[0]['promedio_amount'] else "-")
                 st.metric("💳 Valor Total Depósitos", f"${df_depositos.iloc[0]['total_amount']:,.2f}" if df_depositos.iloc[0]['total_amount'] else "-")
 
-                # Altas actuales
                 df_total = consultar(f"""
                     SELECT COUNT(*) AS total_usuarios 
                     FROM plasma_core.users
@@ -234,7 +232,6 @@ with tab2:
                 """)
                 st.metric("🧍‍♂️ Altas Actuales", f"{df_total.iloc[0, 0]:,}")
 
-                # Jugadores activos
                 df_jugadores = consultar(f"""
                     SELECT COUNT(DISTINCT u.user_id) AS jugadores,
                            AVG(re.amount) AS importe_medio
@@ -248,7 +245,6 @@ with tab2:
                 st.metric("🎮 Jugadores Día", f"{df_jugadores.iloc[0]['jugadores']:,}")
                 st.metric("💸 Importe Medio Jugado", f"${df_jugadores.iloc[0]['importe_medio']:,.2f}" if df_jugadores.iloc[0]['importe_medio'] else "-")
 
-                # GGR
                 df_ggr = consultar(f"""
                     SELECT 
                         SUM(CASE WHEN `type` = 'BET' THEN amount ELSE 0 END) AS total_bet,
