@@ -7,7 +7,7 @@ from datetime import datetime
 
 
 st.set_page_config(page_title="Dashboard de Márgenes", layout="wide")
-st.title("📊 Panel de Control")
+st.title("📊 Dashboard Interactivo Holded-Financiero")
 
 # ===================
 # 📁 SUBIR ARCHIVO
