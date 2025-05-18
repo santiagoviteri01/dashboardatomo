@@ -322,10 +322,10 @@ with tab2:
     
                     st.subheader("📋 Promedio diario de cada KPI (periodo completo)")
                     st.bar_chart(df_range.mean())
-        except IndexError:
-            st.warning("⚠️ No se pudo procesar la fecha seleccionada. Intenta con otra fecha o revisa la conexión a la base de datos.")
-        except mysql.connector.Error as e:
-            st.error(f"❌ Error de conexión con la base de datos: {e}")
+            except IndexError:
+                st.warning("⚠️ No se pudo procesar la fecha seleccionada. Intenta con otra fecha o revisa la conexión a la base de datos.")
+            except mysql.connector.Error as e:
+                st.error(f"❌ Error de conexión con la base de datos: {e}")
 
 
 
