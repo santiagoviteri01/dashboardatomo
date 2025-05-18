@@ -288,8 +288,8 @@ with tab2:
                 '💸 Importe Medio Jugado': ("AVG(re.amount)","re","ts"),
                 '🎯 Total BET': ("SUM(CASE WHEN re.`type`='BET' THEN re.amount ELSE 0 END)","re","ts"),
                 '🎯 Total WIN': ("SUM(CASE WHEN re.`type`='WIN' THEN re.amount ELSE 0 END)","re","ts"),
-                '📊 GGR': ("SUM(CASE WHEN re.`type`='BET' THEN re.amount ELSE 0 END)
-                          - SUM(CASE WHEN re.`type`='WIN' THEN re.amount ELSE 0 END)","re","ts")
+                '📊 GGR': ("SUM(CASE WHEN re.`type`='BET' THEN re.amount ELSE 0 END) - SUM(CASE WHEN re.`type`='WIN' THEN re.amount ELSE 0 END)", "re", "ts")
+
             }
             kpi = st.selectbox("📊 KPI", list(kpi_map.keys()), key="k_kpi")
             if st.button("Mostrar Top 20", key="b_top"):
