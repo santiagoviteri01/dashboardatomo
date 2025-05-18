@@ -205,9 +205,7 @@ with tab2:
             st.error("⚠️ La fecha final debe ser igual o posterior a la inicial.")
 
         # Selector de cliente
-        clientes_df = consultar(
-            "SELECT DISTINCT user_id FROM plasma_core.users ORDER BY user_id"
-        )
+        clientes_df = consultar("SELECT DISTINCT user_id FROM plasma_core.users ORDER BY user_id")
         opciones_cliente = ["Todos"] + clientes_df["user_id"].astype(str).tolist()
         cliente = st.selectbox("🧍‍♂️ Selecciona Cliente", opciones_cliente)
 
@@ -215,16 +213,16 @@ with tab2:
         actualizar = st.button("🔄 Actualizar", disabled=(end_date < start_date))
 
         if actualizar:
-            # Filtros según cliente
+            # Filtros por cliente
             filtro_altas = "" if cliente == 'Todos' else f"AND user_id = '{cliente}'"
             filtro_dep = filtro_altas
             filtro_jug = "" if cliente == 'Todos' else f"AND s.user_id = '{cliente}'"
             filtro_ggr = "" if cliente == 'Todos' else f"AND session_id IN (SELECT session_id FROM plasma_games.sessions WHERE user_id = '{cliente}')"
 
-            # Cálculo de df_range
+            # Construcción de df_range
             if start_date == end_date:
-                # Datos de un día
                 fecha_str = start_date.strftime("%Y-%m-%d")
+                # Datos del día
                 df_altas = consultar(f"""
                     SELECT COUNT(*) AS nuevas_altas
                     FROM plasma_core.users
@@ -233,9 +231,11 @@ with tab2:
                 df_depos = consultar(f"""
                     SELECT COUNT(*) AS total_transacciones, AVG(amount) AS promedio_amount, SUM(amount) AS total_amount
                     FROM (
-                      SELECT amount, user_id FROM plasma_payments.nico_transactions WHERE ts_commit BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59' {filtro_dep}
+                      SELECT amount, user_id FROM plasma_payments.nico_transactions
+                      WHERE ts_commit BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59' {filtro_dep}
                       UNION ALL
-                      SELECT amount, user_id FROM plasma_payments.payphone_transactions WHERE ts_commit BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59' {filtro_dep}
+                      SELECT amount, user_id FROM plasma_payments.payphone_transactions
+                      WHERE ts_commit BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59' {filtro_dep}
                     ) t
                 """)
                 df_jug = consultar(f"""
@@ -247,11 +247,12 @@ with tab2:
                 df_ggr = consultar(f"""
                     SELECT SUM(CASE WHEN `type`='BET' THEN amount ELSE 0 END) AS total_bet,
                            SUM(CASE WHEN `type`='WIN' THEN amount ELSE 0 END) AS total_win,
-                           SUM(CASE WHEN `type`='BET' THEN amount ELSE 0 END) - SUM(CASE WHEN `type`='WIN' THEN amount ELSE 0 END) AS ggr
+                           SUM(CASE WHEN `type`='BET' THEN amount ELSE 0 END)
+                           - SUM(CASE WHEN `type`='WIN' THEN amount ELSE 0 END) AS ggr
                     FROM plasma_games.rounds_entries
                     WHERE ts BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59' {filtro_ggr}
                 """)
-                # Un solo punto
+                # Único punto
                 df_range = pd.DataFrame({
                     'nuevas_altas': [df_altas.iloc[0,0]],
                     'total_transacciones': [df_depos.iloc[0]['total_transacciones']],
@@ -264,10 +265,9 @@ with tab2:
                     'ggr': [df_ggr.iloc[0]['ggr']],
                 }, index=[fecha_str])
             else:
-                # Serie en rango
+                # Serie rango
                 start_str = start_date.strftime("%Y-%m-%d")
                 end_str = end_date.strftime("%Y-%m-%d")
-                # Query por día
                 df_altas = consultar(f"""
                     SELECT DATE(ts_creation) AS fecha, COUNT(*) AS nuevas_altas
                     FROM plasma_core.users
@@ -277,9 +277,11 @@ with tab2:
                 df_depos = consultar(f"""
                     SELECT DATE(ts_commit) AS fecha, COUNT(*) AS total_transacciones, AVG(amount) AS promedio_amount, SUM(amount) AS total_amount
                     FROM (
-                      SELECT ts_commit, amount FROM plasma_payments.nico_transactions WHERE ts_commit BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro_dep}
+                      SELECT ts_commit, amount FROM plasma_payments.nico_transactions
+                      WHERE ts_commit BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro_dep}
                       UNION ALL
-                      SELECT ts_commit, amount FROM plasma_payments.payphone_transactions WHERE ts_commit BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro_dep}
+                      SELECT ts_commit, amount FROM plasma_payments.payphone_transactions
+                      WHERE ts_commit BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro_dep}
                     ) t
                     GROUP BY fecha ORDER BY fecha
                 """)
@@ -298,26 +300,27 @@ with tab2:
                     WHERE re.ts BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro_ggr}
                     GROUP BY fecha ORDER BY fecha
                 """)
-                # Índice completo y merge
+                # Índice y merge
                 date_index = pd.date_range(start_str, end_str, freq='D')
                 for df_tmp in (df_altas, df_depos, df_jug, df_ggr):
                     df_tmp['fecha'] = pd.to_datetime(df_tmp['fecha'])
                 df_range = pd.DataFrame(index=date_index)
                 df_range = df_range.join(df_altas.set_index('fecha')).join(df_depos.set_index('fecha'))
                 df_range = df_range.join(df_jug.set_index('fecha')).join(df_ggr.set_index('fecha')).fillna(0)
-            # Guardar
+            # Guardar en sesión
             st.session_state['df_range'] = df_range
 
-            # Mostrar gráficos sin zoom
+            # Mostrar gráficos sin zoom con puntos
             for col in df_range.columns:
                 title = col.replace('_', ' ').title()
                 st.subheader(title)
                 df_plot = df_range[[col]].reset_index().rename(columns={'index': 'Fecha', col: title})
-                chart = alt.Chart(df_plot).mark_line().encode(
+                chart = alt.Chart(df_plot).mark_line(point=True).encode(
                     x='Fecha:T',
                     y=alt.Y(f'{title}:Q', title=title)
                 ).properties(width=600, height=300)
                 st.altair_chart(chart, use_container_width=True)
+
 
 
         # Sección Top 20 Clientes por KPI (siempre todos)
