@@ -265,12 +265,28 @@ with tab2:
                 ], axis=1).fillna(0)
                 st.session_state['df_range'] = df_range
                 st.session_state['filtro_cli'] = filtro_cli
+                import altair as alt
 
                 # Mostrar gráficos con títulos
                 for col in df_range.columns:
                     title = col.replace('_',' ').title()
                     st.markdown(f"**{title}**")
-                    st.line_chart(df_range[[col]].round(2))
+                    # Preparo el DataFrame para Altair
+                    df_plot = (
+                        df_range[[col]]
+                        .reset_index()
+                        .rename(columns={'fecha': 'Fecha', col: title})
+                    )
+                    chart = (
+                        alt.Chart(df_plot)
+                        .mark_line()
+                        .encode(
+                            x='Fecha:T',
+                            y=alt.Y(f'{title}:Q', title=title)
+                        )
+                        .properties(width=600, height=300)
+                    )
+                    st.altair_chart(chart, use_container_width=True)
 
         # Top 20 Clientes por KPI
         if 'df_range' in st.session_state:
