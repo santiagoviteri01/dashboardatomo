@@ -337,7 +337,11 @@ with tab2:
             df_range = st.session_state['df_range']
             st.markdown("---")
             st.header("🔎 Top 20 Clientes por KPI")
-            fecha_detalle = st.selectbox("📅 Fecha detalle", df_range.index.astype(str).tolist(), key="det_fecha")
+            fecha_detalle = st.selectbox(
+                "📅 Fecha detalle",
+                df_range.index.astype(str).tolist(),
+                key="det_fecha"
+            )
             kpi_map = {
                 '👥 Nuevas Altas':    ("COUNT(*)",                     "plasma_core.users",             "ts_creation"),
                 '💰 Depósitos Tot.':   ("COUNT(*)",                     "nico_transactions/payphone_transactions", "ts_commit"),
@@ -356,15 +360,16 @@ with tab2:
                     sql = f"""
                         SELECT user_id, {agg} AS valor
                         FROM plasma_core.users
-                        WHERE DATE({ts_col}) = '{fecha_detalle}' {'' if cliente=='Todos' else f"AND user_id='{cliente}'"}
-                        GROUP BY user_id ORDER BY valor DESC LIMIT 20
+                        WHERE DATE({ts_col}) = '{fecha_detalle}'
+                        GROUP BY user_id
+                        ORDER BY valor DESC LIMIT 20
                     """
                 elif "nico_transactions" in tbl:
                     sql = f"""
                         SELECT user_id, {agg} AS valor FROM (
-                            SELECT user_id, amount, ts_commit FROM plasma_payments.nico_transactions WHERE DATE(ts_commit) = '{fecha_detalle}' {'' if cliente=='Todos' else f"AND user_id='{cliente}'"}
+                            SELECT user_id, amount, ts_commit FROM plasma_payments.nico_transactions WHERE DATE(ts_commit) = '{fecha_detalle}'
                             UNION ALL
-                            SELECT user_id, amount, ts_commit FROM plasma_payments.payphone_transactions WHERE DATE(ts_commit) = '{fecha_detalle}' {'' if cliente=='Todos' else f"AND user_id='{cliente}'"}
+                            SELECT user_id, amount, ts_commit FROM plasma_payments.payphone_transactions WHERE DATE(ts_commit) = '{fecha_detalle}'
                         ) t GROUP BY user_id ORDER BY valor DESC LIMIT 20
                     """
                 else:
@@ -373,16 +378,12 @@ with tab2:
                         SELECT s.user_id, {agg} AS valor
                         FROM plasma_games.rounds_entries re
                         JOIN plasma_games.sessions s ON re.session_id=s.session_id
-                        WHERE DATE(re.{ts_col}) = '{fecha_detalle}' AND re.`type`='{tipo}' {'' if cliente=='Todos' else f"AND s.user_id='{cliente}'"}
+                        WHERE DATE(re.{ts_col}) = '{fecha_detalle}' AND re.`type`='{tipo}'
                         GROUP BY s.user_id ORDER BY valor DESC LIMIT 20
                     """
                 df_top = consultar(sql)
-                df_names = consultar("SELECT user_id, CONCAT(firstname,' ',lastname) AS nombre FROM plasma_core.users")
-                df_res = df_top.merge(df_names, on="user_id", how="left").set_index('user_id')
-                st.table(df_res.rename(columns={'valor': kpi}).round(2))
-
-
-
+                df_top = df_top.set_index('user_id')
+                st.table(df_top.round(2))
 
 
 
