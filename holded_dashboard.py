@@ -313,13 +313,20 @@ with tab2:
                     WHERE re.ts BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro_ggr}
                     GROUP BY fecha ORDER BY fecha
                 """)
-                # Consolidar
-                df_range = pd.concat([
-                    df_altas.set_index('fecha'),
-                    df_depos.set_index('fecha'),
-                    df_jug.set_index('fecha'),
-                    df_ggr.set_index('fecha')
-                ], axis=1).fillna(0)
+                # Crear índice completo de fechas
+                date_index = pd.date_range(start_str, end_str, freq='D')
+                # Convertir columna fecha a datetime
+                for df_tmp in (df_altas, df_depos, df_jug, df_ggr):
+                    df_tmp['fecha'] = pd.to_datetime(df_tmp['fecha'])
+                # Unir datos en un DataFrame con índice completo
+                df_range = pd.DataFrame(index=date_index)
+                # Unir cada métrica
+                df_range = df_range.join(df_altas.set_index('fecha'))
+                df_range = df_range.join(df_depos.set_index('fecha'))
+                df_range = df_range.join(df_jug.set_index('fecha'))
+                df_range = df_range.join(df_ggr.set_index('fecha'))
+                # Rellenar ceros
+                df_range = df_range.fillna(0)
                 st.session_state['df_range'] = df_range
 
             # Mostrar gráficos sin zoom
@@ -386,8 +393,6 @@ with tab2:
                 df_top = consultar(sql)
                 df_top = df_top.set_index('user_id')
                 st.table(df_top.round(2))
-
-
 
 
 
