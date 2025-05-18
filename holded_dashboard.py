@@ -5,7 +5,7 @@ import difflib
 import mysql.connector
 from datetime import datetime
 from datetime import date
-import altair as alt.
+import altair as alt
 st.set_page_config(page_title="Dashboard de Márgenes", layout="wide")
 st.title("📊 Dashboard Interactivo Holded-Financiero")
 
