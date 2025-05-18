@@ -346,10 +346,7 @@ with tab2:
                     df_merge = df_top.merge(df_names, on="user_id", how="left")
                     df_merge = df_merge.rename(columns={"valor": kpi}).set_index("user_id")
                     st.table(df_merge.round(2))
-            except IndexError:
-                st.warning("⚠️ No se pudo procesar la fecha seleccionada. Intenta con otra fecha o revisa la conexión a la base de datos.")
-            except mysql.connector.Error as e:
-                st.error(f"❌ Error de conexión con la base de datos: {e}")
+
 
 
 
