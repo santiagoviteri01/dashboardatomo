@@ -209,120 +209,121 @@ with tab2:
         actualizar = st.button("🔄 Actualizar", disabled=(not start_date or not end_date))
 
         if actualizar:
-            # Filtro común según cliente
-            filtro_cli = "" if cliente_seleccionado == "Todos" else f"AND user_id = '{cliente_seleccionado}'"
-
-            if start_date == end_date:
-                # Modo fecha única: comport. original
-                fecha_str = start_date.strftime("%Y-%m-%d")
-
-                # Nuevas altas
-                df_altas = consultar(f"""
-                    SELECT COUNT(*) as nuevas_altas
-                    FROM plasma_core.users
-                    WHERE ts_creation BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59'
-                    {filtro_cli}
-                """)
-                st.metric("👥 Nuevas Altas en el Día", f"{int(df_altas.iloc[0,0]):,}")
-
-                # Depósitos
-                df_depositos = consultar(f"""
-                    SELECT COUNT(*) AS total_transacciones, AVG(amount) AS promedio_amount, SUM(amount) AS total_amount
-                    FROM (
-                      SELECT ts_commit, amount, user_id FROM plasma_payments.nico_transactions
-                      WHERE ts_commit BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59' {filtro_cli}
-                      UNION ALL
-                      SELECT ts_commit, amount, user_id FROM plasma_payments.payphone_transactions
-                      WHERE ts_commit BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59' {filtro_cli}
-                    ) AS t
-                """)
-                st.metric("💰 Depósitos Día", f"{int(df_depositos.iloc[0]['total_transacciones']):,}")
-                st.metric("💵 Importe Medio de Depósitos", f"${df_depositos.iloc[0]['promedio_amount']:,.2f}" if df_depositos.iloc[0]['promedio_amount'] else "-")
-                st.metric("💳 Valor Total Depósitos", f"${df_depositos.iloc[0]['total_amount']:,.2f}" if df_depositos.iloc[0]['total_amount'] else "-")
-
-                # Altas actuales
-                df_total = consultar(f"SELECT COUNT(*) AS total_usuarios FROM plasma_core.users {'' if cliente_seleccionado=='Todos' else f"WHERE user_id='{cliente_seleccionado}'"}")
-                st.metric("🧍‍♂️ Altas Actuales", f"{int(df_total.iloc[0,0]):,}")
-
-                # Jugadores y importe jugado
-                df_jugadores = consultar(f"""
-                    SELECT COUNT(DISTINCT u.user_id) AS jugadores, AVG(re.amount) AS importe_medio
-                    FROM plasma_games.rounds_entries re
-                    JOIN plasma_games.sessions s ON re.session_id=s.session_id
-                    JOIN plasma_core.users u ON s.user_id=u.user_id
-                    WHERE re.ts BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59' AND re.`type`='BET' {filtro_cli.replace('user_id','u.user_id')}
-                """)
-                st.metric("🎮 Jugadores Día", f"{int(df_jugadores.iloc[0]['jugadores']):,}")
-                st.metric("💸 Importe Medio Jugado", f"${df_jugadores.iloc[0]['importe_medio']:,.2f}" if df_jugadores.iloc[0]['importe_medio'] else "-")
-
-                # GGR
-                df_ggr = consultar(f"""
-                    SELECT SUM(CASE WHEN `type`='BET' THEN amount ELSE 0 END) AS total_bet,
-                           SUM(CASE WHEN `type`='WIN' THEN amount ELSE 0 END) AS total_win,
-                           SUM(CASE WHEN `type`='BET' THEN amount ELSE 0 END)-SUM(CASE WHEN `type`='WIN' THEN amount ELSE 0 END) AS ggr
-                    FROM plasma_games.rounds_entries
-                    WHERE ts BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59' {'' if cliente_seleccionado=='Todos' else f"AND session_id IN (SELECT session_id FROM plasma_games.sessions WHERE user_id='{cliente_seleccionado}')"}
-                """)
-                st.metric("🎯 Total BET", f"${df_ggr.iloc[0]['total_bet']:,.2f}" if df_ggr.iloc[0]['total_bet'] else "-")
-                st.metric("🎯 Total WIN", f"${df_ggr.iloc[0]['total_win']:,.2f}" if df_ggr.iloc[0]['total_win'] else "-")
-                st.metric("📊 GGR Día", f"${df_ggr.iloc[0]['ggr']:,.2f}" if df_ggr.iloc[0]['ggr'] else "-")
-
-            else:
-                # Modo rango de fechas: series y promedios
-                start_str = start_date.strftime("%Y-%m-%d")
-                end_str = end_date.strftime("%Y-%m-%d")
-                
-                # Altas por día
-                df_altas_range = consultar(f"""
-                    SELECT DATE(ts_creation) AS fecha, COUNT(*) AS nuevas_altas
-                    FROM plasma_core.users
-                    WHERE ts_creation BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro_cli}
-                    GROUP BY DATE(ts_creation) ORDER BY fecha
-                """)
-                # Depósitos por día
-                df_depositos_range = consultar(f"""
-                    SELECT fecha, total_transacciones, promedio_amount, total_amount FROM (
-                      SELECT DATE(ts_commit) AS fecha, COUNT(*) AS total_transacciones, AVG(amount) AS promedio_amount, SUM(amount) AS total_amount
-                      FROM (
-                        SELECT ts_commit, amount FROM plasma_payments.nico_transactions WHERE ts_commit BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro_cli}
-                        UNION ALL
-                        SELECT ts_commit, amount FROM plasma_payments.payphone_transactions WHERE ts_commit BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro_cli}
-                      ) t GROUP BY DATE(ts_commit)
-                    ) sub ORDER BY fecha
-                """)
-                # Jugadores por día
-                df_jugadores_range = consultar(f"""
-                    SELECT DATE(re.ts) AS fecha, COUNT(DISTINCT s.user_id) AS jugadores, AVG(re.amount) AS importe_medio
-                    FROM plasma_games.rounds_entries re
-                    JOIN plasma_games.sessions s ON re.session_id=s.session_id
-                    WHERE re.ts BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' AND re.`type`='BET' {filtro_cli.replace('user_id','s.user_id')}
-                    GROUP BY DATE(re.ts) ORDER BY fecha
-                """)
-                # GGR por día
-                df_ggr_range = consultar(f"""
-                    SELECT fecha, SUM(total_bet) AS total_bet, SUM(total_win) AS total_win, SUM(total_bet)-SUM(total_win) AS ggr FROM (
-                      SELECT DATE(ts) AS fecha, CASE WHEN `type`='BET' THEN amount ELSE 0 END AS total_bet, CASE WHEN `type`='WIN' THEN amount ELSE 0 END AS total_win
-                      FROM plasma_games.rounds_entries WHERE ts BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {'' if cliente_seleccionado=='Todos' else f"AND session_id IN (SELECT session_id FROM plasma_games.sessions WHERE user_id='{cliente_seleccionado}')"}
-                    ) t GROUP BY fecha ORDER BY fecha
-                """)
-                # Unir y mostrar
-                df_range = pd.concat([
-                    df_altas_range.set_index('fecha'),
-                    df_depositos_range.set_index('fecha'),
-                    df_jugadores_range.set_index('fecha'),
-                    df_ggr_range.set_index('fecha')
-                ], axis=1).fillna(0)
-
-                st.subheader("📈 Totales diarios en el rango seleccionado")
-                st.line_chart(df_range[['nuevas_altas','total_transacciones','total_amount','jugadores','total_bet','total_win','ggr']])
-
-                st.subheader("📊 Promedios diarios de monto (depósitos y jugado)")
-                st.line_chart(df_range[['promedio_amount','importe_medio']])
-
-                st.subheader("📋 Promedio diario de cada KPI (periodo completo)")
-                st.bar_chart(df_range.mean())
-            except IndexError:
-                st.warning("⚠️ No se pudo procesar la fecha seleccionada. Intenta con otra fecha o revisa la conexión a la base de datos.")
+            try:
+                # Filtro común según cliente
+                filtro_cli = "" if cliente_seleccionado == "Todos" else f"AND user_id = '{cliente_seleccionado}'"
+    
+                if start_date == end_date:
+                    # Modo fecha única: comport. original
+                    fecha_str = start_date.strftime("%Y-%m-%d")
+    
+                    # Nuevas altas
+                    df_altas = consultar(f"""
+                        SELECT COUNT(*) as nuevas_altas
+                        FROM plasma_core.users
+                        WHERE ts_creation BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59'
+                        {filtro_cli}
+                    """)
+                    st.metric("👥 Nuevas Altas en el Día", f"{int(df_altas.iloc[0,0]):,}")
+    
+                    # Depósitos
+                    df_depositos = consultar(f"""
+                        SELECT COUNT(*) AS total_transacciones, AVG(amount) AS promedio_amount, SUM(amount) AS total_amount
+                        FROM (
+                          SELECT ts_commit, amount, user_id FROM plasma_payments.nico_transactions
+                          WHERE ts_commit BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59' {filtro_cli}
+                          UNION ALL
+                          SELECT ts_commit, amount, user_id FROM plasma_payments.payphone_transactions
+                          WHERE ts_commit BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59' {filtro_cli}
+                        ) AS t
+                    """)
+                    st.metric("💰 Depósitos Día", f"{int(df_depositos.iloc[0]['total_transacciones']):,}")
+                    st.metric("💵 Importe Medio de Depósitos", f"${df_depositos.iloc[0]['promedio_amount']:,.2f}" if df_depositos.iloc[0]['promedio_amount'] else "-")
+                    st.metric("💳 Valor Total Depósitos", f"${df_depositos.iloc[0]['total_amount']:,.2f}" if df_depositos.iloc[0]['total_amount'] else "-")
+    
+                    # Altas actuales
+                    df_total = consultar(f"SELECT COUNT(*) AS total_usuarios FROM plasma_core.users {'' if cliente_seleccionado=='Todos' else f"WHERE user_id='{cliente_seleccionado}'"}")
+                    st.metric("🧍‍♂️ Altas Actuales", f"{int(df_total.iloc[0,0]):,}")
+    
+                    # Jugadores y importe jugado
+                    df_jugadores = consultar(f"""
+                        SELECT COUNT(DISTINCT u.user_id) AS jugadores, AVG(re.amount) AS importe_medio
+                        FROM plasma_games.rounds_entries re
+                        JOIN plasma_games.sessions s ON re.session_id=s.session_id
+                        JOIN plasma_core.users u ON s.user_id=u.user_id
+                        WHERE re.ts BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59' AND re.`type`='BET' {filtro_cli.replace('user_id','u.user_id')}
+                    """)
+                    st.metric("🎮 Jugadores Día", f"{int(df_jugadores.iloc[0]['jugadores']):,}")
+                    st.metric("💸 Importe Medio Jugado", f"${df_jugadores.iloc[0]['importe_medio']:,.2f}" if df_jugadores.iloc[0]['importe_medio'] else "-")
+    
+                    # GGR
+                    df_ggr = consultar(f"""
+                        SELECT SUM(CASE WHEN `type`='BET' THEN amount ELSE 0 END) AS total_bet,
+                               SUM(CASE WHEN `type`='WIN' THEN amount ELSE 0 END) AS total_win,
+                               SUM(CASE WHEN `type`='BET' THEN amount ELSE 0 END)-SUM(CASE WHEN `type`='WIN' THEN amount ELSE 0 END) AS ggr
+                        FROM plasma_games.rounds_entries
+                        WHERE ts BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59' {'' if cliente_seleccionado=='Todos' else f"AND session_id IN (SELECT session_id FROM plasma_games.sessions WHERE user_id='{cliente_seleccionado}')"}
+                    """)
+                    st.metric("🎯 Total BET", f"${df_ggr.iloc[0]['total_bet']:,.2f}" if df_ggr.iloc[0]['total_bet'] else "-")
+                    st.metric("🎯 Total WIN", f"${df_ggr.iloc[0]['total_win']:,.2f}" if df_ggr.iloc[0]['total_win'] else "-")
+                    st.metric("📊 GGR Día", f"${df_ggr.iloc[0]['ggr']:,.2f}" if df_ggr.iloc[0]['ggr'] else "-")
+    
+                else:
+                    # Modo rango de fechas: series y promedios
+                    start_str = start_date.strftime("%Y-%m-%d")
+                    end_str = end_date.strftime("%Y-%m-%d")
+                    
+                    # Altas por día
+                    df_altas_range = consultar(f"""
+                        SELECT DATE(ts_creation) AS fecha, COUNT(*) AS nuevas_altas
+                        FROM plasma_core.users
+                        WHERE ts_creation BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro_cli}
+                        GROUP BY DATE(ts_creation) ORDER BY fecha
+                    """)
+                    # Depósitos por día
+                    df_depositos_range = consultar(f"""
+                        SELECT fecha, total_transacciones, promedio_amount, total_amount FROM (
+                          SELECT DATE(ts_commit) AS fecha, COUNT(*) AS total_transacciones, AVG(amount) AS promedio_amount, SUM(amount) AS total_amount
+                          FROM (
+                            SELECT ts_commit, amount FROM plasma_payments.nico_transactions WHERE ts_commit BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro_cli}
+                            UNION ALL
+                            SELECT ts_commit, amount FROM plasma_payments.payphone_transactions WHERE ts_commit BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro_cli}
+                          ) t GROUP BY DATE(ts_commit)
+                        ) sub ORDER BY fecha
+                    """)
+                    # Jugadores por día
+                    df_jugadores_range = consultar(f"""
+                        SELECT DATE(re.ts) AS fecha, COUNT(DISTINCT s.user_id) AS jugadores, AVG(re.amount) AS importe_medio
+                        FROM plasma_games.rounds_entries re
+                        JOIN plasma_games.sessions s ON re.session_id=s.session_id
+                        WHERE re.ts BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' AND re.`type`='BET' {filtro_cli.replace('user_id','s.user_id')}
+                        GROUP BY DATE(re.ts) ORDER BY fecha
+                    """)
+                    # GGR por día
+                    df_ggr_range = consultar(f"""
+                        SELECT fecha, SUM(total_bet) AS total_bet, SUM(total_win) AS total_win, SUM(total_bet)-SUM(total_win) AS ggr FROM (
+                          SELECT DATE(ts) AS fecha, CASE WHEN `type`='BET' THEN amount ELSE 0 END AS total_bet, CASE WHEN `type`='WIN' THEN amount ELSE 0 END AS total_win
+                          FROM plasma_games.rounds_entries WHERE ts BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {'' if cliente_seleccionado=='Todos' else f"AND session_id IN (SELECT session_id FROM plasma_games.sessions WHERE user_id='{cliente_seleccionado}')"}
+                        ) t GROUP BY fecha ORDER BY fecha
+                    """)
+                    # Unir y mostrar
+                    df_range = pd.concat([
+                        df_altas_range.set_index('fecha'),
+                        df_depositos_range.set_index('fecha'),
+                        df_jugadores_range.set_index('fecha'),
+                        df_ggr_range.set_index('fecha')
+                    ], axis=1).fillna(0)
+    
+                    st.subheader("📈 Totales diarios en el rango seleccionado")
+                    st.line_chart(df_range[['nuevas_altas','total_transacciones','total_amount','jugadores','total_bet','total_win','ggr']])
+    
+                    st.subheader("📊 Promedios diarios de monto (depósitos y jugado)")
+                    st.line_chart(df_range[['promedio_amount','importe_medio']])
+    
+                    st.subheader("📋 Promedio diario de cada KPI (periodo completo)")
+                    st.bar_chart(df_range.mean())
+        except IndexError:
+            st.warning("⚠️ No se pudo procesar la fecha seleccionada. Intenta con otra fecha o revisa la conexión a la base de datos.")
         except mysql.connector.Error as e:
             st.error(f"❌ Error de conexión con la base de datos: {e}")
 
