@@ -323,56 +323,76 @@ with tab2:
 
 
 
-        # Sección Top 20 Clientes por KPI (siempre todos)
-            st.markdown("---")
-            st.header("🔎 Top 20 Clientes por KPI")
-            fecha_detalle = st.selectbox(
-                "📅 Fecha detalle",
-                df_range.index.astype(str).tolist(),
-                key="det_fecha"
-            )
-            kpi_map = {
-                '👥 Nuevas Altas':    ("COUNT(*)", "plasma_core.users", "ts_creation"),
-                '💰 Depósitos Tot.':   ("COUNT(*)", "nico_transactions/payphone_transactions", "ts_commit"),
-                '💵 Importe Medio Depósito': ("AVG(amount)", "nico_transactions/payphone_transactions", "ts_commit"),
-                '💳 Valor Total Depósito':   ("SUM(amount)", "nico_transactions/payphone_transactions", "ts_commit"),
-                '🎮 Jugadores':        ("COUNT(DISTINCT re.session_id)", "rounds_entries", "ts"),
-                '💸 Importe Medio Jugado':    ("AVG(re.amount)", "rounds_entries", "ts"),
-                '🎯 Total BET':        ("SUM(CASE WHEN re.`type`='BET' THEN re.amount ELSE 0 END)", "rounds_entries", "ts"),
-                '🎯 Total WIN':        ("SUM(CASE WHEN re.`type`='WIN' THEN re.amount ELSE 0 END)", "rounds_entries", "ts"),
-                '📊 GGR':              ("SUM(CASE WHEN re.`type`='BET' THEN re.amount ELSE 0 END)-SUM(CASE WHEN re.`type`='WIN' THEN re.amount ELSE 0 END)", "rounds_entries", "ts")
-            }
-            kpi = st.selectbox("📊 KPI", list(kpi_map.keys()), key="det_kpi")
-            if st.button("Mostrar Top 20", key="det_boton"):
-                agg, tbl, ts_col = kpi_map[kpi]
-                if tbl == "plasma_core.users":
-                    sql = f"""
-                        SELECT user_id, {agg} AS valor
-                        FROM plasma_core.users
-                        WHERE DATE({ts_col}) = '{fecha_detalle}'
-                        GROUP BY user_id ORDER BY valor DESC LIMIT 20
-                    """
-                elif "nico_transactions" in tbl:
-                    sql = f"""
-                        SELECT user_id, {agg} AS valor FROM (
-                            SELECT user_id, amount, ts_commit FROM plasma_payments.nico_transactions WHERE DATE(ts_commit) = '{fecha_detalle}'
-                            UNION ALL
-                            SELECT user_id, amount, ts_commit FROM plasma_payments.payphone_transactions WHERE DATE(ts_commit) = '{fecha_detalle}'
-                        ) t GROUP BY user_id ORDER BY valor DESC LIMIT 20
-                    """
-                else:
-                    tipo = 'BET' if 'BET' in kpi else 'WIN' if 'WIN' in kpi else ''
-                    sql = f"""
-                        SELECT s.user_id, {agg} AS valor
-                        FROM plasma_games.rounds_entries re
-                        JOIN plasma_games.sessions s ON re.session_id=s.session_id
-                        WHERE DATE(re.{ts_col}) = '{fecha_detalle}' AND re.`type`='{tipo}'
-                        GROUP BY s.user_id ORDER BY valor DESC LIMIT 20
-                    """
-                df_top = consultar(sql)
-                df_top = df_top.set_index('user_id')
-                st.table(df_top.round(2))
+        if 'df_range' in st.session_state:
+            df_range = st.session_state['df_range']
+            # Gráficos KPI
+            for col in df_range.columns:
+                title = col.replace('_', ' ').title()
+                st.subheader(title)
+                df_plot = df_range[[col]].reset_index().rename(columns={'index': 'Fecha', col: title})
+                chart = alt.Chart(df_plot).mark_line(point=True).encode(
+                    x='Fecha:T',
+                    y=alt.Y(f'{title}:Q', title=title)
+                ).properties(width=600, height=300)
+                st.altair_chart(chart, use_container_width=True)
 
+            # Top 20 Clientes por KPI
+        if 'df_range' in st.session_state:
+            start_str = start_date.strftime("%Y-%m-%d")
+            end_str = end_date.strftime("%Y-%m-%d")
+            st.markdown("---")
+            st.header("📋 KPI por Cliente en el Rango Seleccionado")
+            df_kpis = consultar(f"""
+                SELECT u.user_id,
+                       COUNT(CASE WHEN u.ts_creation BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' THEN 1 END) AS nuevas_altas,
+                       COALESCE(t.total_transacciones,0) AS total_transacciones,
+                       COALESCE(t.promedio_amount,0) AS promedio_amount,
+                       COALESCE(t.total_amount,0) AS total_amount,
+                       COALESCE(g.jugadores,0) AS jugadores,
+                       COALESCE(g.importe_medio,0) AS importe_medio,
+                       COALESCE(r.total_bet,0) AS total_bet,
+                       COALESCE(r.total_win,0) AS total_win,
+                       COALESCE(r.ggr,0) AS ggr
+                FROM plasma_core.users u
+                LEFT JOIN (
+                    SELECT user_id,
+                           COUNT(*) AS total_transacciones,
+                           AVG(amount) AS promedio_amount,
+                           SUM(amount) AS total_amount
+                    FROM (
+                        SELECT user_id, amount, ts_commit FROM plasma_payments.nico_transactions
+                        WHERE ts_commit BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59'
+                        UNION ALL
+                        SELECT user_id, amount, ts_commit FROM plasma_payments.payphone_transactions
+                        WHERE ts_commit BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59'
+                    ) t
+                    GROUP BY user_id
+                ) t ON u.user_id = t.user_id
+                LEFT JOIN (
+                    SELECT s.user_id,
+                           COUNT(DISTINCT re.session_id) AS jugadores,
+                           AVG(re.amount) AS importe_medio
+                    FROM plasma_games.rounds_entries re
+                    JOIN plasma_games.sessions s ON re.session_id = s.session_id
+                    WHERE re.ts BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' AND re.`type`='BET'
+                    GROUP BY s.user_id
+                ) g ON u.user_id = g.user_id
+                LEFT JOIN (
+                    SELECT s.user_id,
+                           SUM(CASE WHEN re.`type`='BET' THEN re.amount ELSE 0 END) AS total_bet,
+                           SUM(CASE WHEN re.`type`='WIN' THEN re.amount ELSE 0 END) AS total_win,
+                           SUM(CASE WHEN re.`type`='BET' THEN re.amount ELSE 0 END)
+                           - SUM(CASE WHEN re.`type`='WIN' THEN re.amount ELSE 0 END) AS ggr
+                    FROM plasma_games.rounds_entries re
+                    JOIN plasma_games.sessions s ON re.session_id = s.session_id
+                    WHERE re.ts BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59'
+                    GROUP BY s.user_id
+                ) r ON u.user_id = r.user_id
+                WHERE u.ts_creation <= '{end_str} 23:59:59'
+                ORDER BY ggr DESC
+            """)
+            df_kpis = df_kpis.set_index('user_id')
+            st.dataframe(df_kpis.round(2))
 
 
 
