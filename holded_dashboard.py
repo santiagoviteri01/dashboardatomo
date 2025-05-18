@@ -188,14 +188,13 @@ with tab2:
                 st.error(f"❌ Error de conexión con la base de datos: {e}")
                 return pd.DataFrame()
 
-        # Selección de fecha única o rango
-default_dates = (date.today(), date.today())
+        # Fecha única o rango
+        default_dates = (date.today(), date.today())
         fecha = st.date_input(
             "📅 Selecciona fecha o rango de fechas",
             value=default_dates,
             key="fecha_tab2"
         )
-        # Desempaquetar y validar fechas
         if isinstance(fecha, (tuple, list)) and len(fecha) == 2:
             start_date, end_date = fecha
         else:
@@ -206,53 +205,58 @@ default_dates = (date.today(), date.today())
         if end_date < start_date:
             st.warning("⚠️ La fecha final no puede ser anterior a la inicial.")
         else:
-            # Selector de cliente y botón actualizar
+            # Selección de cliente y actualización
             clientes_df = consultar(
                 "SELECT DISTINCT user_id, CONCAT(firstname,' ',lastname) AS nombre FROM plasma_core.users ORDER BY nombre ASC"
             )
-            opciones_cliente = ["Todos"] + clientes_df["user_id"].dropna().astype(str).tolist()
-            cliente_seleccionado = st.selectbox("🧍‍♂️ Selecciona Cliente por ID", opciones_cliente)
-            actualizar = st.button("🔄 Actualizar", disabled=(not start_date or not end_date))
-
-            if actualizar:
-                filtro_cli = "" if cliente_seleccionado == "Todos" else f"AND user_id = '{cliente_seleccionado}'"
-                start_str = start_date.strftime("%Y-%m-%d")
-                end_str = end_date.strftime("%Y-%m-%d")
+            opciones_cliente = ["Todos"] + clientes_df["user_id"].astype(str).tolist()
+            cliente_seleccionado = st.selectbox("🧍‍♂️ Cliente", opciones_cliente)
+            if st.button("🔄 Actualizar"):
+                filtro_cli = "" if cliente_seleccionado == "Todos" else f"AND re.user_id = '{cliente_seleccionado}'"
+                start_str, end_str = start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")
 
                 # Consultas diarias
                 df_altas = consultar(f"""
                     SELECT DATE(ts_creation) AS fecha, COUNT(*) AS nuevas_altas
                     FROM plasma_core.users
-                    WHERE ts_creation BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro_cli}
+                    WHERE ts_creation BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro_cli.replace('re.user_id','')}
                     GROUP BY fecha ORDER BY fecha
                 """)
                 df_depositos = consultar(f"""
-                    SELECT DATE(ts_commit) AS fecha, COUNT(*) AS total_transacciones, AVG(amount) AS promedio_amount, SUM(amount) AS total_amount
+                    SELECT DATE(ts_commit) AS fecha,
+                           COUNT(*) AS total_transacciones,
+                           AVG(amount) AS promedio_amount,
+                           SUM(amount) AS total_amount
                     FROM (
-                      SELECT ts_commit, amount FROM plasma_payments.nico_transactions WHERE ts_commit BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro_cli}
+                      SELECT ts_commit, amount, user_id FROM plasma_payments.nico_transactions
+                      WHERE ts_commit BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro_cli.replace('re.user_id','user_id')}
                       UNION ALL
-                      SELECT ts_commit, amount FROM plasma_payments.payphone_transactions WHERE ts_commit BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro_cli}
+                      SELECT ts_commit, amount, user_id FROM plasma_payments.payphone_transactions
+                      WHERE ts_commit BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro_cli.replace('re.user_id','user_id')}
                     ) t
                     GROUP BY fecha ORDER BY fecha
                 """)
                 df_jugadores = consultar(f"""
-                    SELECT DATE(re.ts) AS fecha, COUNT(DISTINCT s.user_id) AS jugadores, AVG(re.amount) AS importe_medio
+                    SELECT DATE(re.ts) AS fecha,
+                           COUNT(DISTINCT re.session_id) AS jugadores,
+                           AVG(re.amount) AS importe_medio
                     FROM plasma_games.rounds_entries re
-                    JOIN plasma_games.sessions s ON re.session_id=s.session_id
-                    WHERE re.ts BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' AND re.`type`='BET' {filtro_cli.replace('user_id','s.user_id')}
+                    JOIN plasma_games.sessions s ON re.session_id = s.session_id
+                    WHERE re.ts BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro_cli}
                     GROUP BY fecha ORDER BY fecha
                 """)
                 df_ggr = consultar(f"""
-                    SELECT DATE(ts) AS fecha,
-                           SUM(CASE WHEN `type`='BET' THEN amount ELSE 0 END) AS total_bet,
-                           SUM(CASE WHEN `type`='WIN' THEN amount ELSE 0 END) AS total_win,
-                           SUM(CASE WHEN `type`='BET' THEN amount ELSE 0 END) - SUM(CASE WHEN `type`='WIN' THEN amount ELSE 0 END) AS ggr
-                    FROM plasma_games.rounds_entries
-                    WHERE ts BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {'' if cliente_seleccionado=='Todos' else f"AND session_id IN (SELECT session_id FROM plasma_games.sessions WHERE user_id='{cliente_seleccionado}')"}
+                    SELECT DATE(re.ts) AS fecha,
+                           SUM(CASE WHEN re.`type`='BET' THEN re.amount ELSE 0 END) AS total_bet,
+                           SUM(CASE WHEN re.`type`='WIN' THEN re.amount ELSE 0 END) AS total_win,
+                           SUM(CASE WHEN re.`type`='BET' THEN re.amount ELSE 0 END)
+                           - SUM(CASE WHEN re.`type`='WIN' THEN re.amount ELSE 0 END) AS ggr
+                    FROM plasma_games.rounds_entries re
+                    WHERE re.ts BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro_cli}
                     GROUP BY fecha ORDER BY fecha
                 """)
 
-                # Consolidar y guardar en sesión
+                # Consolidar rango
                 df_range = pd.concat([
                     df_altas.set_index('fecha'),
                     df_depositos.set_index('fecha'),
@@ -262,71 +266,64 @@ default_dates = (date.today(), date.today())
                 st.session_state['df_range'] = df_range
                 st.session_state['filtro_cli'] = filtro_cli
 
-                # Gráficos individuales con títulos
-                for col in ['nuevas_altas','total_transacciones','total_amount','jugadores','total_bet','total_win','ggr']:
-                    st.subheader(f"📈 {col.replace('_',' ').title()}")
-                    st.line_chart(df_range[col].round(2))
-                for col in ['promedio_amount','importe_medio']:
-                    st.subheader(f"📊 {col.replace('_',' ').title()}")
-                    st.line_chart(df_range[col].round(2))
-                st.subheader("📋 Promedio Diario Global")
-                st.bar_chart(df_range.mean().round(2))
+                # Mostrar gráficos con títulos
+                for col in df_range.columns:
+                    title = col.replace('_',' ').title()
+                    st.markdown(f"**{title}**")
+                    st.line_chart(df_range[[col]].round(2))
 
-        # Sección Top 20 Clientes por KPI
+        # Top 20 Clientes por KPI
         if 'df_range' in st.session_state:
             df_range = st.session_state['df_range']
             filtro_cli = st.session_state['filtro_cli']
             st.markdown("---")
-            st.subheader("🔎 Top 20 Clientes por KPI")
-
-            opciones_fechas = df_range.index.astype(str).tolist()
-            fecha_detalle = st.selectbox("📅 Selecciona fecha para detalle", opciones_fechas, key="fecha_detalle")
-
+            st.header("🔎 Top 20 Clientes por KPI")
+            fecha_detalle = st.selectbox("📅 Fecha detalle", df_range.index.astype(str).tolist(), key="k_fecha")
             kpi_map = {
-                '👥 Nuevas Altas': ("COUNT(*)", "plasma_core.users", "ts_creation"),
-                '💰 Depósitos Tot.': ("COUNT(*)", "nico_transactions/payphone_transactions", "ts_commit"),
-                '💵 Importe Medio Depósito': ("AVG(amount)", "nico_transactions/payphone_transactions", "ts_commit"),
-                '💳 Valor Total Depósito': ("SUM(amount)", "nico_transactions/payphone_transactions", "ts_commit"),
-                '🎮 Jugadores': ("COUNT(DISTINCT re.session_id)", "rounds_entries", "ts"),
-                '💸 Importe Medio Jugado': ("AVG(amount)", "rounds_entries", "ts"),
-                '🎯 Total BET': ("SUM(amount)", "rounds_entries", "ts"),
-                '🎯 Total WIN': ("SUM(amount)", "rounds_entries", "ts"),
-                '📊 GGR': ("SUM(CASE WHEN re.`type`='BET' THEN amount ELSE 0 END) - SUM(CASE WHEN re.`type`='WIN' THEN amount ELSE 0 END)",
-                          "rounds_entries", "ts")
+                '👥 Nuevas Altas': ("COUNT(*)","plasma_core.users","ts_creation"),
+                '💰 Depósitos Tot.': ("COUNT(*)","nico","ts_commit"),
+                '💵 Importe Medio Depósito': ("AVG(amount)","nico","ts_commit"),
+                '💳 Valor Total Depósito': ("SUM(amount)","nico","ts_commit"),
+                '🎮 Jugadores': ("COUNT(DISTINCT re.session_id)","re","ts"),
+                '💸 Importe Medio Jugado': ("AVG(re.amount)","re","ts"),
+                '🎯 Total BET': ("SUM(CASE WHEN re.`type`='BET' THEN re.amount ELSE 0 END)","re","ts"),
+                '🎯 Total WIN': ("SUM(CASE WHEN re.`type`='WIN' THEN re.amount ELSE 0 END)","re","ts"),
+                '📊 GGR': ("SUM(CASE WHEN re.`type`='BET' THEN re.amount ELSE 0 END)
+                          - SUM(CASE WHEN re.`type`='WIN' THEN re.amount ELSE 0 END)","re","ts")
             }
-            kpi = st.selectbox("📊 Selecciona KPI para Top 20", list(kpi_map.keys()), key="kpi_detalle")
-            if st.button("Mostrar Top 20", key="boton_top20"):
-                agg, table, col_ts = kpi_map[kpi]
-                if table == 'plasma_core.users':
+            kpi = st.selectbox("📊 KPI", list(kpi_map.keys()), key="k_kpi")
+            if st.button("Mostrar Top 20", key="b_top"):
+                agg, tbl, ts_col = kpi_map[kpi]
+                if tbl == 'plasma_core.users':
                     sql = f"""
                         SELECT user_id, {agg} AS valor
                         FROM plasma_core.users
-                        WHERE DATE({col_ts}) = '{fecha_detalle}' {filtro_cli}
-                        GROUP BY user_id
-                        ORDER BY valor DESC LIMIT 20
+                        WHERE DATE({ts_col}) = '{fecha_detalle}' {filtro_cli.replace('re.user_id','')}
+                        GROUP BY user_id ORDER BY valor DESC LIMIT 20
                     """
-                elif 'nico_transactions' in table:
+                elif tbl == 'nico':
                     sql = f"""
                         SELECT user_id, {agg} AS valor FROM (
-                            SELECT user_id, amount, ts_commit FROM plasma_payments.nico_transactions WHERE DATE(ts_commit) = '{fecha_detalle}' {filtro_cli}
+                            SELECT user_id, amount, ts_commit FROM plasma_payments.nico_transactions
+                            WHERE DATE(ts_commit) = '{fecha_detalle}' {filtro_cli.replace('re.user_id','user_id')}
                             UNION ALL
-                            SELECT user_id, amount, ts_commit FROM plasma_payments.payphone_transactions WHERE DATE(ts_commit) = '{fecha_detalle}' {filtro_cli}
+                            SELECT user_id, amount, ts_commit FROM plasma_payments.payphone_transactions
+                            WHERE DATE(ts_commit) = '{fecha_detalle}' {filtro_cli.replace('re.user_id','user_id')}
                         ) t GROUP BY user_id ORDER BY valor DESC LIMIT 20
                     """
                 else:
-                    tipo = 'BET' if 'BET' in kpi else 'WIN' if 'WIN' in kpi else ''
                     sql = f"""
                         SELECT s.user_id, {agg} AS valor
                         FROM plasma_games.rounds_entries re
                         JOIN plasma_games.sessions s ON re.session_id=s.session_id
-                        WHERE DATE(re.{col_ts}) = '{fecha_detalle}' AND re.`type`='{tipo}' {filtro_cli.replace('user_id','s.user_id')}
+                        WHERE DATE(re.{ts_col}) = '{fecha_detalle}' {filtro_cli}
                         GROUP BY s.user_id ORDER BY valor DESC LIMIT 20
                     """
                 df_top = consultar(sql)
                 df_names = consultar("SELECT user_id, CONCAT(firstname,' ',lastname) AS nombre FROM plasma_core.users")
-                df_res = df_top.merge(df_names, on="user_id", how="left").set_index('user_id')
-                df_res = df_res.rename(columns={'valor': kpi}).round(2)
-                st.table(df_res)
+                df_merge = df_top.merge(df_names, on="user_id", how="left").set_index('user_id')
+                st.table(df_merge.rename(columns={'valor': kpi}).round(2))
+
 
 
 
