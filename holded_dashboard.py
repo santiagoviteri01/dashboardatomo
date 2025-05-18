@@ -189,28 +189,37 @@ with tab2:
                 return pd.DataFrame()
 
         # Selección de fecha única o rango
-        today = date.today()
-        fecha = st.date_input(
-            "📅 Selecciona fecha o rango de fechas",
-            value=(today, today),
-            min_value=date(2000, 1, 1),
-            max_value=today,
-            key="fecha_tab2"
-        )
-        if isinstance(fecha, (tuple, list)) and len(fecha) == 2:
-            start_date, end_date = fecha
-        else:
-            start_date = end_date = fecha
-        if end_date < start_date:
-            st.error("⚠️ La fecha final debe ser igual o posterior a la inicial.")
-
-        # Selector de cliente
-        clientes_df = consultar("SELECT DISTINCT user_id FROM plasma_core.users ORDER BY user_id")
-        opciones_cliente = ["Todos"] + clientes_df["user_id"].astype(str).tolist()
-        cliente = st.selectbox("🧍‍♂️ Selecciona Cliente", opciones_cliente)
-
-        # Botón de actualización
-        actualizar = st.button("🔄 Actualizar", disabled=(end_date < start_date))
+        with st.form("filtros"):
+            today = date.today()
+            fechas = st.date_input(
+                "📅 Selecciona fecha o rango de fechas",
+                value=st.session_state.get("fechas", (today, today)),
+                min_value=date(2000,1,1),
+                max_value=today,
+                key="fecha_tab2"
+            )
+            if isinstance(fechas, (tuple,list)) and len(fechas)==2:
+                sd, ed = fechas
+            else:
+                sd = ed = fechas
+            st.session_state['fechas'] = (sd, ed)
+            if ed < sd:
+                st.error("⚠️ La fecha final debe ser igual o posterior a la inicial.")
+            clientes_df = consultar("SELECT DISTINCT user_id FROM plasma_core.users ORDER BY user_id")
+            opciones_cliente = ["Todos"] + clientes_df["user_id"].astype(str).tolist()
+            cliente_sel = st.selectbox(
+                "🧍‍♂️ Selecciona Cliente (solo impacto en métricas arriba)",
+                opciones_cliente,
+                index=opciones_cliente.index(st.session_state.get("cliente","Todos"))
+            )
+            st.session_state['cliente'] = cliente_sel
+            submitted = st.form_submit_button("🔄 Actualizar")
+        # Control de ejecución tras submit\ n        if not st.session_state.get('df_range') and not submitted:
+            return  # sale sin mostrar nada hasta presionar actual izar
+        # Asignar variables del estado
+        start_date, end_date = st.session_state['fechas']
+        cliente = st.session_state['cliente']
+        actualizar = submitted("🔄 Actualizar", disabled=(end_date<start_date))
 
         if actualizar:
             # Filtros por cliente
