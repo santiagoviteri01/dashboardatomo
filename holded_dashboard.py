@@ -193,10 +193,11 @@ with tab2:
             value=(date.today(), date.today()),
             key="fecha_tab2"
         )
-        if isinstance(fecha, tuple):
+        if isinstance(fecha, (tuple, list)) and len(fecha) == 2:
             start_date, end_date = fecha
         else:
             start_date = end_date = fecha
+
         if end_date is None:
             end_date = start_date
 
