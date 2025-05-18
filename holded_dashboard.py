@@ -4,8 +4,8 @@ import re
 import difflib
 import mysql.connector
 from datetime import datetime
+from datetime import date
 
-value=(date.today(), date.today())
 st.set_page_config(page_title="Dashboard de Márgenes", layout="wide")
 st.title("📊 Dashboard Interactivo Holded-Financiero")
 
