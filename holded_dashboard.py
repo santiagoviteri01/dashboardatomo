@@ -197,6 +197,8 @@ with tab2:
             start_date, end_date = fecha
         else:
             start_date = end_date = fecha
+        if end_date is None:
+            end_date = start_date
 
         # Selector de cliente
         clientes_df = consultar(
@@ -315,7 +317,9 @@ with tab2:
                     ], axis=1).fillna(0)
     
                     st.subheader("📈 Totales diarios en el rango seleccionado")
-                    st.line_chart(df_range[['nuevas_altas','total_transacciones','total_amount','jugadores','total_bet','total_win','ggr']])
+                    for col in ['nuevas_altas', 'total_transacciones', 'total_amount', 'jugadores', 'total_bet', 'total_win', 'ggr']:
+                        st.subheader(f"📈 {col.replace('_', ' ').title()} Diario")
+                        st.line_chart(df_range[[col]])
     
                     st.subheader("📊 Promedios diarios de monto (depósitos y jugado)")
                     st.line_chart(df_range[['promedio_amount','importe_medio']])
