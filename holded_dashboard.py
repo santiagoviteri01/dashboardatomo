@@ -269,21 +269,26 @@ with tab2:
                 # Modo rango: series y promedios
                 start_str = start_date.strftime("%Y-%m-%d")
                 end_str = end_date.strftime("%Y-%m-%d")
-                filtro = "" if cliente=='Todos' else f"AND re.user_id = '{cliente}'"
+                # Filtros por cliente específicos
+                filtro_altas = "" if cliente == 'Todos' else f"AND user_id = '{cliente}'"
+                filtro_dep = "" if cliente == 'Todos' else f"AND user_id = '{cliente}'"
+                filtro_jug = "" if cliente == 'Todos' else f"AND s.user_id = '{cliente}'"
+                filtro_ggr = "" if cliente == 'Todos' else f"AND session_id IN (SELECT session_id FROM plasma_games.sessions WHERE user_id = '{cliente}')"
+
                 # Altas por día
                 df_altas = consultar(f"""
                     SELECT DATE(ts_creation) AS fecha, COUNT(*) AS nuevas_altas
                     FROM plasma_core.users
-                    WHERE ts_creation BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro.replace('re.user_id','')}
+                    WHERE ts_creation BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro_altas}
                     GROUP BY fecha ORDER BY fecha
                 """)
                 # Depósitos por día
                 df_depos = consultar(f"""
                     SELECT DATE(ts_commit) AS fecha, COUNT(*) AS total_transacciones, AVG(amount) AS promedio_amount, SUM(amount) AS total_amount
                     FROM (
-                      SELECT ts_commit, amount, user_id FROM plasma_payments.nico_transactions WHERE ts_commit BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro}
+                      SELECT ts_commit, amount FROM plasma_payments.nico_transactions WHERE ts_commit BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro_dep}
                       UNION ALL
-                      SELECT ts_commit, amount, user_id FROM plasma_payments.payphone_transactions WHERE ts_commit BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro}
+                      SELECT ts_commit, amount FROM plasma_payments.payphone_transactions WHERE ts_commit BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro_dep}
                     ) t
                     GROUP BY fecha ORDER BY fecha
                 """)
@@ -292,7 +297,7 @@ with tab2:
                     SELECT DATE(re.ts) AS fecha, COUNT(DISTINCT re.session_id) AS jugadores, AVG(re.amount) AS importe_medio
                     FROM plasma_games.rounds_entries re
                     JOIN plasma_games.sessions s ON re.session_id = s.session_id
-                    WHERE re.ts BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' AND re.`type`='BET' {filtro}
+                    WHERE re.ts BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' AND re.`type`='BET' {filtro_jug}
                     GROUP BY fecha ORDER BY fecha
                 """)
                 # GGR por día
@@ -300,9 +305,9 @@ with tab2:
                     SELECT DATE(re.ts) AS fecha,
                            SUM(CASE WHEN re.`type`='BET' THEN re.amount ELSE 0 END) AS total_bet,
                            SUM(CASE WHEN re.`type`='WIN' THEN re.amount ELSE 0 END) AS total_win,
-                           SUM(CASE WHEN re.`type`='BET' THEN re.amount ELSE 0 END)-SUM(CASE WHEN re.`type`='WIN' THEN re.amount ELSE 0 END) AS ggr
+                           SUM(CASE WHEN re.`type`='BET' THEN re.amount ELSE 0 END) - SUM(CASE WHEN re.`type`='WIN' THEN re.amount ELSE 0 END) AS ggr
                     FROM plasma_games.rounds_entries re
-                    WHERE re.ts BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro}
+                    WHERE re.ts BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro_ggr}
                     GROUP BY fecha ORDER BY fecha
                 """)
                 # Consolidar
@@ -326,7 +331,7 @@ with tab2:
                         .properties(width=600, height=300)
                     )
                     st.altair_chart(chart, use_container_width=True)
-
+                    
         # Sección Top 20 Clientes por KPI
         if 'df_range' in st.session_state:
             df_range = st.session_state['df_range']
