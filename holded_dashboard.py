@@ -215,7 +215,6 @@ with tab2:
             st.session_state['cliente'] = cliente_sel
             submitted = st.form_submit_button("🔄 Actualizar")
         # Control de ejecución tras submit\ n        if not st.session_state.get('df_range') and not submitted:
-            return  # sale sin mostrar nada hasta presionar actual izar
         # Asignar variables del estado
         start_date, end_date = st.session_state['fechas']
         cliente = st.session_state['cliente']
