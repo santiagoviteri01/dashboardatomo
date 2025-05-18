@@ -166,7 +166,6 @@ with tab1:
         st.info("⬆️ Por favor, sube un archivo Excel para continuar.")
 
 
-tab2, _ = st.tabs(["Otras pestañas", "Métricas Plataforma"])[1]
 with tab2:
     with st.container():
         st.header("📊 Métricas de la Plataforma de Juego")
