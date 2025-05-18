@@ -167,10 +167,8 @@ with tab1:
 
 
 with tab2:
-
     with st.container():
         st.header("📊 Métricas de la Plataforma de Juego (Fecha o Rango de Fechas)")
-
         def consultar(sql):
             try:
                 conn = mysql.connector.connect(
@@ -323,10 +321,8 @@ with tab2:
 
                 st.subheader("📋 Promedio diario de cada KPI (periodo completo)")
                 st.bar_chart(df_range.mean())
-
-
-        except IndexError:
-            st.warning("⚠️ No se pudo procesar la fecha seleccionada. Intenta con otra fecha o revisa la conexión a la base de datos.")
+            except IndexError:
+                st.warning("⚠️ No se pudo procesar la fecha seleccionada. Intenta con otra fecha o revisa la conexión a la base de datos.")
         except mysql.connector.Error as e:
             st.error(f"❌ Error de conexión con la base de datos: {e}")
 
