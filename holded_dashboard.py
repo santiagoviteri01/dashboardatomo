@@ -464,7 +464,17 @@ with tab2:
         sub_start_str = sub_start.strftime("%Y-%m-%d")
         sub_end_str   = sub_end.strftime("%Y-%m-%d")
     
-        agg, source, ts_col, _ = kpi_map[kpi_sel]
+
+        agg, from_clause, ts_col, _ = kpi_map[kpi_sel]
+    
+        # —— AÑADE ESTAS LÍNEAS ——  
+        # Extraer el alias (última palabra de from_clause)
+        alias = from_clause.strip().split()[-1]
+        # Construir la cláusula WHERE usando el alias correcto
+        where_clause = (
+            f"{alias}.{ts_col} BETWEEN "
+            f"'{sub_start_str} 00:00:00' AND '{sub_end_str} 23:59:59'"
+        )
         if source == "plasma_core.users":
             where = f"u.{ts_col} BETWEEN '{sub_start_str} 00:00:00' AND '{sub_end_str} 23:59:59'"
             sql = f"""
