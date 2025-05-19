@@ -346,118 +346,118 @@ with tab2:
             st.altair_chart(chart, use_container_width=True)
 
         # Top 20 Clientes por KPI
-if 'fechas' in st.session_state:
-    # Recupero rango de fechas
-    start_date, end_date = st.session_state['fechas']
-    start_str = start_date.strftime("%Y-%m-%d")
-    end_str   = end_date.strftime("%Y-%m-%d")
-
-    st.markdown("---")
-    st.header("🔎 Top 20 Clientes por KPI")
-
-    # Definición de KPI y sus orígenes
-    kpi_map = {
-        '👥 Nuevas Altas': (
-            "COUNT(*)",
-            "plasma_core.users",
-            "ts_creation",
-            f"u.ts_creation BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59'"
-        ),
-        '💰 Depósitos (Transacciones)': (
-            "COUNT(*)",
-            "payments",
-            "ts_commit",
-            f"t.ts_commit BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59'"
-        ),
-        '💵 Importe Medio Depósitos': (
-            "AVG(amount)",
-            "payments",
-            "ts_commit",
-            f"t.ts_commit BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59'"
-        ),
-        '💳 Valor Total Depósitos': (
-            "SUM(amount)",
-            "payments",
-            "ts_commit",
-            f"t.ts_commit BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59'"
-        ),
-        '🎮 Jugadores': (
-            "COUNT(DISTINCT re.session_id)",
-            "rounds",
-            "ts",
-            f"re.ts BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' AND re.`type`='BET'"
-        ),
-        '💸 Importe Medio Jugado': (
-            "AVG(re.amount)",
-            "rounds",
-            "ts",
-            f"re.ts BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' AND re.`type`='BET'"
-        ),
-        '🎯 Total BET': (
-            "SUM(CASE WHEN re.`type`='BET' THEN re.amount ELSE 0 END)",
-            "rounds",
-            "ts",
-            f"re.ts BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59'"
-        ),
-        '🎯 Total WIN': (
-            "SUM(CASE WHEN re.`type`='WIN' THEN re.amount ELSE 0 END)",
-            "rounds",
-            "ts",
-            f"re.ts BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59'"
-        ),
-        '📊 GGR': (
-            "SUM(CASE WHEN re.`type`='BET' THEN re.amount ELSE 0 END) - SUM(CASE WHEN re.`type`='WIN' THEN re.amount ELSE 0 END)",
-            "rounds",
-            "ts",
-            f"re.ts BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59'"
-        ),
-    }
-
-    kpi = st.selectbox("📊 Selecciona KPI", list(kpi_map.keys()), key="det_kpi")
-    if st.button("Mostrar Top 20", key="det_boton"):
-        agg, source, ts_col, where_clause = kpi_map[kpi]
-
-        if source == "plasma_core.users":
-            sql = f"""
-            SELECT u.user_id, {agg} AS valor
-            FROM plasma_core.users u
-            WHERE {where_clause}
-            GROUP BY u.user_id
-            ORDER BY valor DESC
-            LIMIT 20
-            """
-        elif source == "payments":
-            sql = f"""
-            SELECT t.user_id, {agg} AS valor
-            FROM (
-                SELECT user_id, amount, ts_commit
-                  FROM plasma_payments.nico_transactions
-                 WHERE {where_clause}
-                UNION ALL
-                SELECT user_id, amount, ts_commit
-                  FROM plasma_payments.payphone_transactions
-                 WHERE {where_clause}
-            ) AS t
-            GROUP BY t.user_id
-            ORDER BY valor DESC
-            LIMIT 20
-            """
-        else:  # rounds entries
-            sql = f"""
-            SELECT s.user_id, {agg} AS valor
-            FROM plasma_games.rounds_entries re
-            JOIN plasma_games.sessions s ON re.session_id = s.session_id
-            WHERE {where_clause}
-            GROUP BY s.user_id
-            ORDER BY valor DESC
-            LIMIT 20
-            """
-
-        df_top20 = consultar(sql)
-        if not df_top20.empty:
-            st.table(df_top20.set_index('user_id').round(2))
-        else:
-            st.info("⚠️ No hay datos para ese KPI en el periodo seleccionado.")
+        if 'fechas' in st.session_state:
+            # Recupero rango de fechas
+            start_date, end_date = st.session_state['fechas']
+            start_str = start_date.strftime("%Y-%m-%d")
+            end_str   = end_date.strftime("%Y-%m-%d")
+        
+            st.markdown("---")
+            st.header("🔎 Top 20 Clientes por KPI")
+        
+            # Definición de KPI y sus orígenes
+            kpi_map = {
+                '👥 Nuevas Altas': (
+                    "COUNT(*)",
+                    "plasma_core.users",
+                    "ts_creation",
+                    f"u.ts_creation BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59'"
+                ),
+                '💰 Depósitos (Transacciones)': (
+                    "COUNT(*)",
+                    "payments",
+                    "ts_commit",
+                    f"t.ts_commit BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59'"
+                ),
+                '💵 Importe Medio Depósitos': (
+                    "AVG(amount)",
+                    "payments",
+                    "ts_commit",
+                    f"t.ts_commit BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59'"
+                ),
+                '💳 Valor Total Depósitos': (
+                    "SUM(amount)",
+                    "payments",
+                    "ts_commit",
+                    f"t.ts_commit BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59'"
+                ),
+                '🎮 Jugadores': (
+                    "COUNT(DISTINCT re.session_id)",
+                    "rounds",
+                    "ts",
+                    f"re.ts BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' AND re.`type`='BET'"
+                ),
+                '💸 Importe Medio Jugado': (
+                    "AVG(re.amount)",
+                    "rounds",
+                    "ts",
+                    f"re.ts BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' AND re.`type`='BET'"
+                ),
+                '🎯 Total BET': (
+                    "SUM(CASE WHEN re.`type`='BET' THEN re.amount ELSE 0 END)",
+                    "rounds",
+                    "ts",
+                    f"re.ts BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59'"
+                ),
+                '🎯 Total WIN': (
+                    "SUM(CASE WHEN re.`type`='WIN' THEN re.amount ELSE 0 END)",
+                    "rounds",
+                    "ts",
+                    f"re.ts BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59'"
+                ),
+                '📊 GGR': (
+                    "SUM(CASE WHEN re.`type`='BET' THEN re.amount ELSE 0 END) - SUM(CASE WHEN re.`type`='WIN' THEN re.amount ELSE 0 END)",
+                    "rounds",
+                    "ts",
+                    f"re.ts BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59'"
+                ),
+            }
+        
+            kpi = st.selectbox("📊 Selecciona KPI", list(kpi_map.keys()), key="det_kpi")
+            if st.button("Mostrar Top 20", key="det_boton"):
+                agg, source, ts_col, where_clause = kpi_map[kpi]
+        
+                if source == "plasma_core.users":
+                    sql = f"""
+                    SELECT u.user_id, {agg} AS valor
+                    FROM plasma_core.users u
+                    WHERE {where_clause}
+                    GROUP BY u.user_id
+                    ORDER BY valor DESC
+                    LIMIT 20
+                    """
+                elif source == "payments":
+                    sql = f"""
+                    SELECT t.user_id, {agg} AS valor
+                    FROM (
+                        SELECT user_id, amount, ts_commit
+                          FROM plasma_payments.nico_transactions
+                         WHERE {where_clause}
+                        UNION ALL
+                        SELECT user_id, amount, ts_commit
+                          FROM plasma_payments.payphone_transactions
+                         WHERE {where_clause}
+                    ) AS t
+                    GROUP BY t.user_id
+                    ORDER BY valor DESC
+                    LIMIT 20
+                    """
+                else:  # rounds entries
+                    sql = f"""
+                    SELECT s.user_id, {agg} AS valor
+                    FROM plasma_games.rounds_entries re
+                    JOIN plasma_games.sessions s ON re.session_id = s.session_id
+                    WHERE {where_clause}
+                    GROUP BY s.user_id
+                    ORDER BY valor DESC
+                    LIMIT 20
+                    """
+        
+                df_top20 = consultar(sql)
+                if not df_top20.empty:
+                    st.table(df_top20.set_index('user_id').round(2))
+                else:
+                    st.info("⚠️ No hay datos para ese KPI en el periodo seleccionado.")
 
 
 
