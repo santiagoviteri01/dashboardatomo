@@ -360,7 +360,76 @@ with tab2:
         )
         st.altair_chart(chart, use_container_width=True)
 
-    #
+    # 1) Mapa de KPIs (defínelo antes del form)
+    kpi_map = {
+        '👥 Nuevas Altas': (
+            "COUNT(*)",
+            "plasma_core.users u",
+            "ts_creation",
+            None  # se rellenará dinámicamente con el WHERE
+        ),
+        '💰 Depósitos (Transacciones)': (
+            "COUNT(*)",
+            "(SELECT user_id, ts_commit FROM plasma_payments.nico_transactions WHERE 1=1 "
+            "UNION ALL "
+            "SELECT user_id, ts_commit FROM plasma_payments.payphone_transactions WHERE 1=1) t",
+            "ts_commit",
+            None
+        ),
+        '💵 Importe Medio Depósitos': (
+            "AVG(amount)",
+            "(SELECT user_id, amount, ts_commit FROM plasma_payments.nico_transactions WHERE 1=1 "
+            "UNION ALL "
+            "SELECT user_id, amount, ts_commit FROM plasma_payments.payphone_transactions WHERE 1=1) t",
+            "ts_commit",
+            None
+        ),
+        '💳 Valor Total Depósitos': (
+            "SUM(amount)",
+            "(SELECT user_id, amount, ts_commit FROM plasma_payments.nico_transactions WHERE 1=1 "
+            "UNION ALL "
+            "SELECT user_id, amount, ts_commit FROM plasma_payments.payphone_transactions WHERE 1=1) t",
+            "ts_commit",
+            None
+        ),
+        '🎮 Jugadores': (
+            "COUNT(DISTINCT re.session_id)",
+            "plasma_games.rounds_entries re "
+            "JOIN plasma_games.sessions s ON re.session_id = s.session_id",
+            "ts",
+            None
+        ),
+        '💸 Importe Medio Jugado': (
+            "AVG(re.amount)",
+            "plasma_games.rounds_entries re "
+            "JOIN plasma_games.sessions s ON re.session_id = s.session_id",
+            "ts",
+            None
+        ),
+        '🎯 Total BET': (
+            "SUM(CASE WHEN re.`type`='BET' THEN re.amount ELSE 0 END)",
+            "plasma_games.rounds_entries re "
+            "JOIN plasma_games.sessions s ON re.session_id = s.session_id",
+            "ts",
+            None
+        ),
+        '🎯 Total WIN': (
+            "SUM(CASE WHEN re.`type`='WIN' THEN re.amount ELSE 0 END)",
+            "plasma_games.rounds_entries re "
+            "JOIN plasma_games.sessions s ON re.session_id = s.session_id",
+            "ts",
+            None
+        ),
+        '📊 GGR': (
+            "SUM(CASE WHEN re.`type`='BET' THEN re.amount ELSE 0 END) - "
+            "SUM(CASE WHEN re.`type`='WIN' THEN re.amount ELSE 0 END)",
+            "plasma_games.rounds_entries re "
+            "JOIN plasma_games.sessions s ON re.session_id = s.session_id",
+            "ts",
+            None
+        ),
+    }
+
     # 3) Formulario Top 20
     #
     st.markdown("---")
