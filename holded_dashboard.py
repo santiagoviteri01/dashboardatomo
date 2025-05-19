@@ -466,9 +466,13 @@ with tab2:
     
         # Desempaquetar definición de KPI
         agg, from_clause, ts_col, _ = kpi_map[kpi_sel]
-    
-        # Extraer alias (última palabra del from_clause)
-        alias = from_clause.strip().split()[-1]
+        if "plasma_core.users" in from_clause:
+            alias = "u"
+        elif "nico_transactions" in from_clause or "payphone_transactions" in from_clause:
+            alias = "t"
+        else:
+            # Para todas las métricas de rounds_entries
+            alias = "re"
     
         # Construir cláusula WHERE con alias correcto
         where_clause = (
