@@ -464,60 +464,59 @@ with tab2:
         sub_start_str = sub_start.strftime("%Y-%m-%d")
         sub_end_str   = sub_end.strftime("%Y-%m-%d")
     
-
+        # Desempaquetar definición de KPI
         agg, from_clause, ts_col, _ = kpi_map[kpi_sel]
     
-        # —— AÑADE ESTAS LÍNEAS ——  
-        # Extraer el alias (última palabra de from_clause)
+        # Extraer alias (última palabra del from_clause)
         alias = from_clause.strip().split()[-1]
-        # Construir la cláusula WHERE usando el alias correcto
+    
+        # Construir cláusula WHERE con alias correcto
         where_clause = (
             f"{alias}.{ts_col} BETWEEN "
             f"'{sub_start_str} 00:00:00' AND '{sub_end_str} 23:59:59'"
         )
-        if source == "plasma_core.users":
-            where = f"u.{ts_col} BETWEEN '{sub_start_str} 00:00:00' AND '{sub_end_str} 23:59:59'"
+    
+        # Generar SQL según origen
+        if "plasma_core.users" in from_clause:
             sql = f"""
-            SELECT u.user_id, {agg} AS valor
-              FROM plasma_core.users u
-             WHERE {where}
-             GROUP BY u.user_id
-             ORDER BY valor DESC
-             LIMIT 20
+                SELECT {alias}.user_id AS user_id,
+                       {agg}           AS valor
+                  FROM {from_clause}
+                 WHERE {where_clause}
+                 GROUP BY {alias}.user_id
+                 ORDER BY valor DESC
+                 LIMIT 20
             """
-        elif source == "payments":
-            where = f"t.{ts_col} BETWEEN '{sub_start_str} 00:00:00' AND '{sub_end_str} 23:59:59'"
+        elif "nico_transactions" in from_clause or "payphone_transactions" in from_clause:
             sql = f"""
-            SELECT t.user_id, {agg} AS valor
-              FROM (
-                    SELECT user_id, amount, ts_commit
-                      FROM plasma_payments.nico_transactions
-                     WHERE {where}
-                    UNION ALL
-                    SELECT user_id, amount, ts_commit
-                      FROM plasma_payments.payphone_transactions
-                     WHERE {where}
-                   ) AS t
-             GROUP BY t.user_id
-             ORDER BY valor DESC
-             LIMIT 20
+                SELECT t.user_id, {agg} AS valor
+                  FROM (
+                        SELECT user_id, amount, ts_commit
+                          FROM plasma_payments.nico_transactions
+                         WHERE {where_clause}
+                        UNION ALL
+                        SELECT user_id, amount, ts_commit
+                          FROM plasma_payments.payphone_transactions
+                         WHERE {where_clause}
+                       ) AS t
+                 GROUP BY t.user_id
+                 ORDER BY valor DESC
+                 LIMIT 20
             """
         else:
-            where = f"re.{ts_col} BETWEEN '{sub_start_str} 00:00:00' AND '{sub_end_str} 23:59:59'"
+            # rounds_entries
             sql = f"""
-            SELECT s.user_id, {agg} AS valor
-              FROM plasma_games.rounds_entries re
-              JOIN plasma_games.sessions s 
-                ON re.session_id = s.session_id
-             WHERE {where}
-             GROUP BY s.user_id
-             ORDER BY valor DESC
-             LIMIT 20
+                SELECT s.user_id, {agg} AS valor
+                  FROM {from_clause}
+                 WHERE {where_clause}
+                 GROUP BY s.user_id
+                 ORDER BY valor DESC
+                 LIMIT 20
             """
     
+        # Ejecutar y mostrar
         df_top20 = consultar(sql)
         if not df_top20.empty:
             st.table(df_top20.set_index("user_id").round(2))
         else:
             st.info("⚠️ No hay datos para ese KPI en el periodo seleccionado.")
-
