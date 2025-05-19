@@ -363,82 +363,82 @@ with tab2:
     #
     # 3) Formulario Top 20
     #
-st.markdown("---")
-st.header("🔎 Top 20 Clientes por KPI")
-
-with st.form("top20"):
-    # 1) Calendario acotado al rango original
-    fechas_detalle = st.date_input(
-        "🗓 Selecciona fecha o rango para detalle",
-        value=st.session_state["fechas"],
-        min_value=st.session_state["fechas"][0],
-        max_value=st.session_state["fechas"][1],
-        key="fechas_detalle"
-    )
-    if isinstance(fechas_detalle, (tuple, list)) and len(fechas_detalle) == 2:
-        sub_start, sub_end = fechas_detalle
-    else:
-        sub_start = sub_end = fechas_detalle
-
-    # 2) Selector de KPI
-    kpi_sel = st.selectbox(
-        "📊 Selecciona KPI",
-        list(kpi_map.keys()),
-        key="det_kpi"
-    )
-
-    # 3) **ESTE** debe ir **dentro** del with y al final
-    top20_btn = st.form_submit_button("Mostrar Top 20")
-
-# — Fuera del form, reaccionamos al submit —
-if top20_btn:
-    sub_start_str = sub_start.strftime("%Y-%m-%d")
-    sub_end_str   = sub_end.strftime("%Y-%m-%d")
-
-    agg, source, ts_col, _ = kpi_map[kpi_sel]
-    if source == "plasma_core.users":
-        where = f"u.{ts_col} BETWEEN '{sub_start_str} 00:00:00' AND '{sub_end_str} 23:59:59'"
-        sql = f"""
-        SELECT u.user_id, {agg} AS valor
-          FROM plasma_core.users u
-         WHERE {where}
-         GROUP BY u.user_id
-         ORDER BY valor DESC
-         LIMIT 20
-        """
-    elif source == "payments":
-        where = f"t.{ts_col} BETWEEN '{sub_start_str} 00:00:00' AND '{sub_end_str} 23:59:59'"
-        sql = f"""
-        SELECT t.user_id, {agg} AS valor
-          FROM (
-                SELECT user_id, amount, ts_commit
-                  FROM plasma_payments.nico_transactions
-                 WHERE {where}
-                UNION ALL
-                SELECT user_id, amount, ts_commit
-                  FROM plasma_payments.payphone_transactions
-                 WHERE {where}
-               ) AS t
-         GROUP BY t.user_id
-         ORDER BY valor DESC
-         LIMIT 20
-        """
-    else:
-        where = f"re.{ts_col} BETWEEN '{sub_start_str} 00:00:00' AND '{sub_end_str} 23:59:59'"
-        sql = f"""
-        SELECT s.user_id, {agg} AS valor
-          FROM plasma_games.rounds_entries re
-          JOIN plasma_games.sessions s 
-            ON re.session_id = s.session_id
-         WHERE {where}
-         GROUP BY s.user_id
-         ORDER BY valor DESC
-         LIMIT 20
-        """
-
-    df_top20 = consultar(sql)
-    if not df_top20.empty:
-        st.table(df_top20.set_index("user_id").round(2))
-    else:
-        st.info("⚠️ No hay datos para ese KPI en el periodo seleccionado.")
+    st.markdown("---")
+    st.header("🔎 Top 20 Clientes por KPI")
+    
+    with st.form("top20"):
+        # 1) Calendario acotado al rango original
+        fechas_detalle = st.date_input(
+            "🗓 Selecciona fecha o rango para detalle",
+            value=st.session_state["fechas"],
+            min_value=st.session_state["fechas"][0],
+            max_value=st.session_state["fechas"][1],
+            key="fechas_detalle"
+        )
+        if isinstance(fechas_detalle, (tuple, list)) and len(fechas_detalle) == 2:
+            sub_start, sub_end = fechas_detalle
+        else:
+            sub_start = sub_end = fechas_detalle
+    
+        # 2) Selector de KPI
+        kpi_sel = st.selectbox(
+            "📊 Selecciona KPI",
+            list(kpi_map.keys()),
+            key="det_kpi"
+        )
+    
+        # 3) **ESTE** debe ir **dentro** del with y al final
+        top20_btn = st.form_submit_button("Mostrar Top 20")
+    
+    # — Fuera del form, reaccionamos al submit —
+    if top20_btn:
+        sub_start_str = sub_start.strftime("%Y-%m-%d")
+        sub_end_str   = sub_end.strftime("%Y-%m-%d")
+    
+        agg, source, ts_col, _ = kpi_map[kpi_sel]
+        if source == "plasma_core.users":
+            where = f"u.{ts_col} BETWEEN '{sub_start_str} 00:00:00' AND '{sub_end_str} 23:59:59'"
+            sql = f"""
+            SELECT u.user_id, {agg} AS valor
+              FROM plasma_core.users u
+             WHERE {where}
+             GROUP BY u.user_id
+             ORDER BY valor DESC
+             LIMIT 20
+            """
+        elif source == "payments":
+            where = f"t.{ts_col} BETWEEN '{sub_start_str} 00:00:00' AND '{sub_end_str} 23:59:59'"
+            sql = f"""
+            SELECT t.user_id, {agg} AS valor
+              FROM (
+                    SELECT user_id, amount, ts_commit
+                      FROM plasma_payments.nico_transactions
+                     WHERE {where}
+                    UNION ALL
+                    SELECT user_id, amount, ts_commit
+                      FROM plasma_payments.payphone_transactions
+                     WHERE {where}
+                   ) AS t
+             GROUP BY t.user_id
+             ORDER BY valor DESC
+             LIMIT 20
+            """
+        else:
+            where = f"re.{ts_col} BETWEEN '{sub_start_str} 00:00:00' AND '{sub_end_str} 23:59:59'"
+            sql = f"""
+            SELECT s.user_id, {agg} AS valor
+              FROM plasma_games.rounds_entries re
+              JOIN plasma_games.sessions s 
+                ON re.session_id = s.session_id
+             WHERE {where}
+             GROUP BY s.user_id
+             ORDER BY valor DESC
+             LIMIT 20
+            """
+    
+        df_top20 = consultar(sql)
+        if not df_top20.empty:
+            st.table(df_top20.set_index("user_id").round(2))
+        else:
+            st.info("⚠️ No hay datos para ese KPI en el periodo seleccionado.")
 
