@@ -41,7 +41,14 @@ with tab1:
             return pd.DataFrame()
     
     df_raw = cargar_cuentas_holded()
-    
+    st.subheader("🔎 Verificación de estructura")
+    if df_raw.empty:
+        st.error("⚠️ El DataFrame está vacío. Revisa tu API key o si el endpoint devuelve datos.")
+    else:
+        st.success("✅ Datos recibidos de Holded.")
+        st.write("Columnas recibidas:")
+        st.code(df_raw.columns.tolist(), language="python")
+        st.dataframe(df_raw.head(5))
     # ==========================
     # 📈 PROCESAMIENTO DE MÁRGENES (sin meses)
     # ==========================
