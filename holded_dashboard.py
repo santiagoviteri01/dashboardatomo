@@ -52,7 +52,7 @@ with tab1:
     # =============================
     # 📅 FILTROS DE FECHA (de mes-año a mes-año)
     # =============================
-    st.sidebar.header("📅 Filtros de Fecha")
+    st.sidebar.header("📅 Filtros de Fecha para Márgenes Comerciales")
     hoy = datetime.today()
     hace_1_ano = hoy.replace(year=hoy.year - 1)
     
@@ -131,7 +131,7 @@ with tab1:
     st.subheader("📋 Márgenes por Cliente y Mes")
     st.dataframe(df_pivot.sort_values(["🗓️ Año-Mes", "margen"], ascending=[False, False]))
     
-    st.subheader("📉 Evolución de Márgenes (Gráfico Estático)")
+    st.subheader("📉 Evolución de Márgenes")
     df_total_mes = df_pivot.groupby("🗓️ Año-Mes")[["ingreso", "gasto", "margen"]].sum().reset_index()
     
     import matplotlib.pyplot as plt
