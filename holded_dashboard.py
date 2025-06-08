@@ -31,61 +31,80 @@ tab1, tab2 = st.tabs(["📈 Márgenes Comerciales", "🧪 Datos Plataforma (DB)"
 with tab1:
     HEADERS = {"accept": "application/json", "key": API_KEY}
     @st.cache_data(ttl=3600)
-    def cargar_cuentas_holded():
-        url = "https://api.holded.com/api/accounting/v1/chartofaccounts"
-        r = requests.get(url, headers=HEADERS)
+    def cargar_documentos_holded(tipo, inicio, fin):
+        url = f"https://api.holded.com/api/invoicing/v1/documents/{tipo}"
+        params = {
+            "starttmp": int(inicio.timestamp()),
+            "endtmp": int(fin.timestamp()),
+            "sort": "created-asc"
+        }
+        r = requests.get(url, headers=HEADERS, params=params)
         if r.status_code == 200:
             return pd.DataFrame(r.json())
         else:
             st.error(f"❌ Error {r.status_code}: {r.text[:300]}")
             return pd.DataFrame()
     
-    df_raw = cargar_cuentas_holded()
-    st.subheader("🔎 Verificación de estructura")
-    if df_raw.empty:
-        st.error("⚠️ El DataFrame está vacío. Revisa tu API key o si el endpoint devuelve datos.")
-    else:
-        st.success("✅ Datos recibidos de Holded.")
-        st.write("Columnas recibidas:")
-        st.code(df_raw.columns.tolist(), language="python")
-        st.dataframe(df_raw.head(5))
-    # ==========================
-    # 📈 PROCESAMIENTO DE MÁRGENES (sin meses)
-    # ==========================
-    if not df_raw.empty:
-        df_filtered = df_raw[df_raw["num"].astype(str).str.startswith(("7", "6"))].copy()
-        df_filtered["codigo"] = df_filtered["num"].astype(str)
-        df_filtered["descripcion"] = df_filtered["name"].astype(str).str.upper()
+    # =============================
+    # 📅 FILTROS DE FECHA
+    # =============================
+    st.sidebar.header("📅 Filtros de Fecha")
+    hoy = datetime.today()
+    hace_1_ano = hoy.replace(year=hoy.year - 1)
+    rango_fechas = st.sidebar.date_input("Selecciona un rango de fechas", [hace_1_ano, hoy])
+    fecha_inicio, fecha_fin = pd.to_datetime(rango_fechas[0]), pd.to_datetime(rango_fechas[1])
     
-        df_filtered["tipo"] = df_filtered["codigo"].str[:3].map(lambda x: "ingreso" if x.startswith("705") else "gasto")
+    # =============================
+    # 📥 CARGA DE DATOS
+    # =============================
+    st.sidebar.markdown("---")
+    st.sidebar.info("Cargando ingresos y gastos desde Holded...")
+    df_ingresos = cargar_documentos_holded("invoice", fecha_inicio, fecha_fin)
+    df_gastos = cargar_documentos_holded("purchase", fecha_inicio, fecha_fin)
     
-        def normalizar_cliente(texto):
-            texto = str(texto).upper()
-            texto = re.sub(r"\d{6,} - ", "", texto)
-            texto = re.sub(r"(PRESTACI[ÓO]N SERVICIOS BET593 -|TRABAJOS REALIZADOS POR)", "", texto)
-            texto = re.sub(r"[^A-Z ]", "", texto)
-            texto = re.sub(r"\s+", " ", texto).strip()
-            return texto
+    if df_ingresos.empty and df_gastos.empty:
+        st.warning("No se encontraron documentos en el rango seleccionado.")
+        st.stop()
     
-        df_filtered["cliente_final"] = df_filtered["descripcion"].apply(normalizar_cliente)
-        df_filtered["valor"] = pd.to_numeric(df_filtered["balance"], errors="coerce").fillna(0)
+    # =============================
+    # 🧮 PROCESAMIENTO DE MÁRGENES
+    # =============================
+    if not df_ingresos.empty:
+        df_ingresos["tipo"] = "ingreso"
+        df_ingresos["valor"] = df_ingresos["total"]
     
-        df_agg = df_filtered.groupby(["cliente_final", "tipo"])["valor"].sum().reset_index()
-        df_pivot = df_agg.pivot(index="cliente_final", columns="tipo", values="valor").fillna(0).reset_index()
-        df_pivot["margen"] = df_pivot.get("ingreso", 0) - abs(df_pivot.get("gasto", 0))
+    if not df_gastos.empty:
+        df_gastos["tipo"] = "gasto"
+        df_gastos["valor"] = -df_gastos["total"]
     
-        # ========================
-        # 📊 VISUALIZACIÓN
-        # ========================
-        st.metric("💰 Margen Total", f"${df_pivot['margen'].sum():,.2f}")
-        st.subheader("📊 Margen por Cliente (total)")
-        st.dataframe(df_pivot.sort_values("margen", ascending=False))
+    # Unimos y normalizamos
+    columnas_necesarias = ["contactName", "date", "tipo", "valor"]
+    df_completo = pd.concat([
+        df_ingresos[columnas_necesarias],
+        df_gastos[columnas_necesarias]
+    ], ignore_index=True)
     
-        st.subheader("📈 Gráfico de Márgenes Totales")
-        st.bar_chart(df_pivot.set_index("cliente_final")["margen"])
+    # Procesamiento temporal
+    df_completo["fecha"] = pd.to_datetime(df_completo["date"], errors="coerce")
+    df_completo["mes"] = df_completo["fecha"].dt.to_period("M").astype(str)
+    df_completo["cliente_final"] = df_completo["contactName"].str.upper()
     
-    else:
-        st.warning("⚠️ No se encontraron datos. Verifica tu API key o el acceso al endpoint.")
+    # Agregación
+    agg = df_completo.groupby(["cliente_final", "mes", "tipo"])["valor"].sum().reset_index()
+    df_pivot = agg.pivot_table(index=["cliente_final", "mes"], columns="tipo", values="valor", fill_value=0).reset_index()
+    df_pivot["margen"] = df_pivot.get("ingreso", 0) - abs(df_pivot.get("gasto", 0))
+    
+    # =============================
+    # 📊 DASHBOARD
+    # =============================
+    st.metric("💰 Margen Total", f"${df_pivot['margen'].sum():,.2f}")
+    
+    st.subheader("📋 Márgenes por Cliente y Mes")
+    st.dataframe(df_pivot.sort_values(["mes", "margen"], ascending=[False, False]))
+    
+    st.subheader("📈 Evolución de Márgenes")
+    df_total_mes = df_pivot.groupby("mes")["ingreso", "gasto", "margen"].sum().reset_index()
+    st.line_chart(df_total_mes.set_index("mes"))
 
 
 
