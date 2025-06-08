@@ -65,7 +65,8 @@ with tab1:
     if df_ingresos.empty and df_gastos.empty:
         st.warning("No se encontraron documentos en el rango seleccionado.")
         st.stop()
-    
+    st.json(df_ingresos.iloc[0].to_dict())
+
     # =============================
     # 🧮 PROCESAMIENTO DE MÁRGENES
     # =============================
