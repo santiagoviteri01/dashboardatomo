@@ -49,7 +49,6 @@ with tab1:
             st.error(f"❌ Error {r.status_code}: {r.text[:300]}")
             return pd.DataFrame()
     
-
     # =============================
     # 📅 FILTROS DE FECHA (de mes-año a mes-año)
     # =============================
@@ -116,8 +115,8 @@ with tab1:
     
     # Agregación
     df_agg = df_completo.groupby(["cliente_final", "año_mes", "tipo"])["valor"].sum().reset_index()
-    df_pivot = df_agg.pivot_table(index=["cliente_final", "año_mes"], columns="tipo", values="valor", fill_value=0).reset_index()
-    df_pivot.rename(columns={"año_mes": "mes"}, inplace=True)
+    df_agg.rename(columns={"año_mes": "🗓️ Año-Mes"}, inplace=True)
+    df_pivot = df_agg.pivot_table(index=["cliente_final", "🗓️ Año-Mes"], columns="tipo", values="valor", fill_value=0).reset_index()
     df_pivot["margen"] = df_pivot.get("ingreso", 0) - abs(df_pivot.get("gasto", 0))
     
     for col in ["ingreso", "gasto", "margen"]:
@@ -130,20 +129,19 @@ with tab1:
     st.metric("💰 Margen Total", f"${df_pivot['margen'].sum():,.2f}")
     
     st.subheader("📋 Márgenes por Cliente y Mes")
-    st.dataframe(df_pivot.sort_values(["mes", "margen"], ascending=[False, False]))
+    st.dataframe(df_pivot.sort_values(["🗓️ Año-Mes", "margen"], ascending=[False, False]))
     
     st.subheader("📉 Evolución de Márgenes (Gráfico Estático)")
-    df_total_mes = df_pivot.groupby("mes")[["ingreso", "gasto", "margen"]].sum().reset_index()
+    df_total_mes = df_pivot.groupby("🗓️ Año-Mes")[["ingreso", "gasto", "margen"]].sum().reset_index()
     
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots(figsize=(12, 5))
-    df_total_mes.set_index("mes")[["ingreso", "gasto", "margen"]].plot(kind='line', marker='o', ax=ax)
+    df_total_mes.set_index("🗓️ Año-Mes")[["ingreso", "gasto", "margen"]].plot(kind='line', marker='o', ax=ax)
     ax.set_title("Evolución de Márgenes por Mes")
     ax.set_ylabel("USD")
-    ax.set_xlabel("Mes")
+    ax.set_xlabel("🗓️ Año-Mes")
     ax.grid(True)
     st.pyplot(fig)
-
 
 with tab2:
     st.header("📊 Métricas de la Plataforma de Juego")
