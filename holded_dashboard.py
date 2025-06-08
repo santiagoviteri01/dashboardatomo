@@ -103,7 +103,7 @@ with tab1:
     st.dataframe(df_pivot.sort_values(["mes", "margen"], ascending=[False, False]))
     
     st.subheader("📈 Evolución de Márgenes")
-    df_total_mes = df_pivot.groupby("mes")["ingreso", "gasto", "margen"].sum().reset_index()
+    df_total_mes = df_pivot.groupby("mes")[["ingreso", "gasto", "margen"]].sum().reset_index()
     st.line_chart(df_total_mes.set_index("mes"))
 
 
