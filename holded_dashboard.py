@@ -50,18 +50,24 @@ with tab1:
             return pd.DataFrame()
     
     # =============================
-    # 📅 FILTROS DE FECHA (por mes)
+    # 📅 FILTROS DE FECHA (de mes-año a mes-año)
     # =============================
     st.sidebar.header("📅 Filtros de Fecha")
     hoy = datetime.today()
     hace_1_ano = hoy.replace(year=hoy.year - 1)
     
-    # Selección de mes y año
-    mes = st.sidebar.selectbox("Selecciona un mes", list(range(1, 13)), index=hoy.month - 1)
-    año = st.sidebar.selectbox("Selecciona un año", list(range(hace_1_ano.year, hoy.year + 1)), index=1)
+    mes_inicio = st.sidebar.selectbox("Mes inicio", list(range(1, 13)), index=hoy.month - 2)
+    año_inicio = st.sidebar.selectbox("Año inicio", list(range(hace_1_ano.year, hoy.year + 1)), index=1)
     
-    fecha_inicio = datetime(año, mes, 1)
-    fecha_fin = pd.to_datetime(pd.Timestamp(fecha_inicio) + pd.offsets.MonthEnd(1))
+    mes_fin = st.sidebar.selectbox("Mes fin", list(range(1, 13)), index=hoy.month - 1)
+    año_fin = st.sidebar.selectbox("Año fin", list(range(hace_1_ano.year, hoy.year + 1)), index=1)
+    
+    fecha_inicio = datetime(año_inicio, mes_inicio, 1)
+    fecha_fin = pd.to_datetime(datetime(año_fin, mes_fin, 1) + pd.offsets.MonthEnd(1))
+    
+    if fecha_inicio > fecha_fin:
+        st.sidebar.error("⚠️ La fecha de inicio no puede ser posterior a la fecha de fin.")
+        st.stop()
     
     # =============================
     # 📥 CARGA DE DATOS
@@ -107,6 +113,12 @@ with tab1:
     
     # Procesamiento temporal
     df_completo["mes"] = df_completo["fecha"].dt.to_period("M").astype(str)
+    
+    # 🎯 Filtro por cliente
+    clientes_disponibles = sorted(df_completo["cliente_final"].dropna().unique())
+    filtro_cliente = st.sidebar.selectbox("🧑 Cliente específico", ["Todos"] + clientes_disponibles)
+    if filtro_cliente != "Todos":
+        df_completo = df_completo[df_completo["cliente_final"] == filtro_cliente]
     
     # Agregación
     agg = df_completo.groupby(["cliente_final", "mes", "tipo"])["valor"].sum().reset_index()
