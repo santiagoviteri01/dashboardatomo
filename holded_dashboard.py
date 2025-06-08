@@ -28,26 +28,16 @@ def cargar_movimientos(inicio=None, fin=None):
     params = {}
     if inicio: params["starttmp"] = int(inicio.timestamp())
     if fin:     params["endtmp"] = int(fin.timestamp())
-    r = requests.get(url, headers=HEADERS, params=params)
-    if r.status_code == 200:
-        return pd.DataFrame(r.json())
-    else:
-        st.error(f"❌ Error {r.status_code}: {r.text}")
-        return pd.DataFrame()
-
-hoy = datetime.today()
-hace_un_ano = hoy.replace(year=hoy.year - 1)
-
-st.title("📒 Prueba de conexión con el Journal contable de Holded")
-df_journal = cargar_movimientos(inicio=hace_un_ano, fin=hoy)
-
-if not df_journal.empty:
-    st.success("✅ Datos cargados desde Holded.")
-    st.write(df_journal.head(10))  # Muestra las primeras filas
-    st.code(df_journal.columns.tolist(), language="python")  # Muestra las columnas
-else:
-    st.warning("⚠️ No se encontraron movimientos o hubo un error.")
     
+    r = requests.get(url, headers=HEADERS, params=params)
+    
+    st.code(r.text[:1000], language="html")  # Muestra los primeros 1000 caracteres de la respuesta
+    
+    try:
+        return pd.DataFrame(r.json())
+    except Exception as e:
+        st.error(f"❌ Error al decodificar JSON: {e}")
+        return pd.DataFrame()
 
 # ===================
 # 🧩 TABS PRINCIPALES
