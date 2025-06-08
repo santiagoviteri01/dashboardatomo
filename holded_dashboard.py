@@ -12,7 +12,36 @@ st.title("📊 Dashboard Interactivo Holded-Financiero")
 # ===================
 # 📁 SUBIR ARCHIVO
 # ===================
-archivo = st.file_uploader("Sube el archivo Excel generado por Holded", type=["xlsx"])
+import requests
+import pandas as pd
+import streamlit as st
+
+API_KEY = "fafbb8191b37e6b696f192e70b4a198c"
+HEADERS = {
+    "accept": "application/json",
+    "key": API_KEY
+}
+
+st.title("🔍 Exploración de datos desde Holded")
+
+@st.cache_data(ttl=3600)
+def cargar_chartofaccounts():
+    url = "https://api.holded.com/api/accounting/v1/chartofaccounts"
+    r = requests.get(url, headers=HEADERS)
+    if r.status_code == 200:
+        return pd.DataFrame(r.json())
+    else:
+        st.error(f"❌ Error {r.status_code}: {r.text}")
+        return pd.DataFrame()
+
+df_chart = cargar_chartofaccounts()
+
+if not df_chart.empty:
+    st.write("✅ Primeras filas del JSON recibido:")
+    st.dataframe(df_chart.head(10))
+    st.code(df_chart.columns.tolist(), language="python")
+else:
+    st.warning("No se encontraron datos.")
 
 # ===================
 # 🧩 TABS PRINCIPALES
