@@ -65,41 +65,31 @@ with tab1:
     if df_ingresos.empty and df_gastos.empty:
         st.warning("No se encontraron documentos en el rango seleccionado.")
         st.stop()
-    st.json(df_ingresos.iloc[0].to_dict())
-
+    
     # =============================
     # 🧮 PROCESAMIENTO DE MÁRGENES
     # =============================
     if not df_ingresos.empty:
         df_ingresos["tipo"] = "ingreso"
-        df_ingresos["valor"] = df_ingresos["total"]
+        df_ingresos["valor"] = pd.to_numeric(df_ingresos["total"], errors="coerce")
+        df_ingresos["cliente_final"] = df_ingresos["contactName"]
+        df_ingresos["fecha"] = pd.to_datetime(df_ingresos["date"], unit="s")
     
     if not df_gastos.empty:
         df_gastos["tipo"] = "gasto"
-        df_gastos["valor"] = -df_gastos["total"]
+        df_gastos["valor"] = -pd.to_numeric(df_gastos["total"], errors="coerce")
+        df_gastos["cliente_final"] = df_gastos["contactName"]
+        df_gastos["fecha"] = pd.to_datetime(df_gastos["date"], unit="s")
     
-    columnas_ingresos = list(set(df_ingresos.columns))
-    columnas_gastos = list(set(df_gastos.columns))
-    
-    # Verificamos si las columnas esperadas existen
-    columnas_necesarias = ["contactName", "date", "tipo", "valor"]
-    faltantes_ingresos = [c for c in columnas_necesarias if c not in columnas_ingresos]
-    faltantes_gastos = [c for c in columnas_necesarias if c not in columnas_gastos]
-    
-    if faltantes_ingresos or faltantes_gastos:
-        st.error(f"❌ Columnas faltantes: Ingresos: {faltantes_ingresos}, Gastos: {faltantes_gastos}")
-        st.stop()
-    
-    # Concatenación segura
+    # Unimos y normalizamos
+    columnas_necesarias = ["cliente_final", "fecha", "tipo", "valor"]
     df_completo = pd.concat([
         df_ingresos[columnas_necesarias],
         df_gastos[columnas_necesarias]
     ], ignore_index=True)
     
     # Procesamiento temporal
-    df_completo["fecha"] = pd.to_datetime(df_completo["date"], errors="coerce")
     df_completo["mes"] = df_completo["fecha"].dt.to_period("M").astype(str)
-    df_completo["cliente_final"] = df_completo["contactName"].str.upper()
     
     # Agregación
     agg = df_completo.groupby(["cliente_final", "mes", "tipo"])["valor"].sum().reset_index()
@@ -117,6 +107,7 @@ with tab1:
     st.subheader("📈 Evolución de Márgenes")
     df_total_mes = df_pivot.groupby("mes")[["ingreso", "gasto", "margen"]].sum().reset_index()
     st.line_chart(df_total_mes.set_index("mes"))
+
 
 
 
