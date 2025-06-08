@@ -30,6 +30,9 @@ tab1, tab2 = st.tabs(["📈 Márgenes Comerciales", "🧪 Datos Plataforma (DB)"
 
 with tab1:
     HEADERS = {"accept": "application/json", "key": API_KEY}
+    # =============================
+    # 📦 FUNCIONES DE CARGA
+    # =============================
     @st.cache_data(ttl=3600)
     def cargar_documentos_holded(tipo, inicio, fin):
         url = f"https://api.holded.com/api/invoicing/v1/documents/{tipo}"
@@ -69,24 +72,32 @@ with tab1:
     # =============================
     # 🧮 PROCESAMIENTO DE MÁRGENES
     # =============================
-    if not df_ingresos.empty:
-        df_ingresos["tipo"] = "ingreso"
-        df_ingresos["valor"] = pd.to_numeric(df_ingresos["total"], errors="coerce")
-        df_ingresos["cliente_final"] = df_ingresos["contactName"]
-        df_ingresos["fecha"] = pd.to_datetime(df_ingresos["date"], unit="s")
+    columnas_necesarias = ["cliente_final", "fecha", "tipo", "valor"]
     
+    # Ingresos
+    if not df_ingresos.empty:
+        df_ingresos = df_ingresos.copy()
+        df_ingresos["tipo"] = "ingreso"
+        df_ingresos["valor"] = pd.to_numeric(df_ingresos.get("total"), errors="coerce")
+        df_ingresos["cliente_final"] = df_ingresos.get("contactName", "Sin nombre")
+        df_ingresos["fecha"] = pd.to_datetime(df_ingresos.get("date"), unit="s", errors="coerce")
+        df_ingresos = df_ingresos[columnas_necesarias]
+    else:
+        df_ingresos = pd.DataFrame(columns=columnas_necesarias)
+    
+    # Gastos
     if not df_gastos.empty:
+        df_gastos = df_gastos.copy()
         df_gastos["tipo"] = "gasto"
-        df_gastos["valor"] = -pd.to_numeric(df_gastos["total"], errors="coerce")
-        df_gastos["cliente_final"] = df_gastos["contactName"]
-        df_gastos["fecha"] = pd.to_datetime(df_gastos["date"], unit="s")
+        df_gastos["valor"] = -pd.to_numeric(df_gastos.get("total"), errors="coerce")
+        df_gastos["cliente_final"] = df_gastos.get("contactName", "Sin nombre")
+        df_gastos["fecha"] = pd.to_datetime(df_gastos.get("date"), unit="s", errors="coerce")
+        df_gastos = df_gastos[columnas_necesarias]
+    else:
+        df_gastos = pd.DataFrame(columns=columnas_necesarias)
     
     # Unimos y normalizamos
-    columnas_necesarias = ["cliente_final", "fecha", "tipo", "valor"]
-    df_completo = pd.concat([
-        df_ingresos[columnas_necesarias],
-        df_gastos[columnas_necesarias]
-    ], ignore_index=True)
+    df_completo = pd.concat([df_ingresos, df_gastos], ignore_index=True)
     
     # Procesamiento temporal
     df_completo["mes"] = df_completo["fecha"].dt.to_period("M").astype(str)
@@ -107,7 +118,6 @@ with tab1:
     st.subheader("📈 Evolución de Márgenes")
     df_total_mes = df_pivot.groupby("mes")[["ingreso", "gasto", "margen"]].sum().reset_index()
     st.line_chart(df_total_mes.set_index("mes"))
-
 
 
 
