@@ -21,23 +21,7 @@ HEADERS = {
     "accept": "application/json",
     "key": API_KEY
 }
-HEADERS = {"accept": "application/json", "key": API_KEY}
-@st.cache_data(ttl=3600)
-def cargar_movimientos(inicio=None, fin=None):
-    url = "https://api.holded.com/api/accounting/v1/journal"
-    params = {}
-    if inicio: params["starttmp"] = int(inicio.timestamp())
-    if fin:     params["endtmp"] = int(fin.timestamp())
-    
-    r = requests.get(url, headers=HEADERS, params=params)
-    
-    st.code(r.text[:1000], language="html")  # Muestra los primeros 1000 caracteres de la respuesta
-    
-    try:
-        return pd.DataFrame(r.json())
-    except Exception as e:
-        st.error(f"❌ Error al decodificar JSON: {e}")
-        return pd.DataFrame()
+
 
 # ===================
 # 🧩 TABS PRINCIPALES
@@ -45,6 +29,57 @@ def cargar_movimientos(inicio=None, fin=None):
 tab1, tab2 = st.tabs(["📈 Márgenes Comerciales", "🧪 Datos Plataforma (DB)"])
 
 with tab1:
+    HEADERS = {"accept": "application/json", "key": API_KEY}
+    @st.cache_data(ttl=3600)
+    def cargar_cuentas_holded():
+        url = "https://api.holded.com/api/accounting/v1/chartofaccounts"
+        r = requests.get(url, headers=HEADERS)
+        if r.status_code == 200:
+            return pd.DataFrame(r.json())
+        else:
+            st.error(f"❌ Error {r.status_code}: {r.text[:300]}")
+            return pd.DataFrame()
+    
+    df_raw = cargar_cuentas_holded()
+    
+    # ==========================
+    # 📈 PROCESAMIENTO DE MÁRGENES (sin meses)
+    # ==========================
+    if not df_raw.empty:
+        df_filtered = df_raw[df_raw["num"].astype(str).str.startswith(("7", "6"))].copy()
+        df_filtered["codigo"] = df_filtered["num"].astype(str)
+        df_filtered["descripcion"] = df_filtered["name"].astype(str).str.upper()
+    
+        df_filtered["tipo"] = df_filtered["codigo"].str[:3].map(lambda x: "ingreso" if x.startswith("705") else "gasto")
+    
+        def normalizar_cliente(texto):
+            texto = str(texto).upper()
+            texto = re.sub(r"\d{6,} - ", "", texto)
+            texto = re.sub(r"(PRESTACI[ÓO]N SERVICIOS BET593 -|TRABAJOS REALIZADOS POR)", "", texto)
+            texto = re.sub(r"[^A-Z ]", "", texto)
+            texto = re.sub(r"\s+", " ", texto).strip()
+            return texto
+    
+        df_filtered["cliente_final"] = df_filtered["descripcion"].apply(normalizar_cliente)
+        df_filtered["valor"] = pd.to_numeric(df_filtered["balance"], errors="coerce").fillna(0)
+    
+        df_agg = df_filtered.groupby(["cliente_final", "tipo"])["valor"].sum().reset_index()
+        df_pivot = df_agg.pivot(index="cliente_final", columns="tipo", values="valor").fillna(0).reset_index()
+        df_pivot["margen"] = df_pivot.get("ingreso", 0) - abs(df_pivot.get("gasto", 0))
+    
+        # ========================
+        # 📊 VISUALIZACIÓN
+        # ========================
+        st.metric("💰 Margen Total", f"${df_pivot['margen'].sum():,.2f}")
+        st.subheader("📊 Margen por Cliente (total)")
+        st.dataframe(df_pivot.sort_values("margen", ascending=False))
+    
+        st.subheader("📈 Gráfico de Márgenes Totales")
+        st.bar_chart(df_pivot.set_index("cliente_final")["margen"])
+    
+    else:
+        st.warning("⚠️ No se encontraron datos. Verifica tu API key o el acceso al endpoint.")
+
 
 
 with tab2:
