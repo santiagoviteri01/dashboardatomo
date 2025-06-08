@@ -33,6 +33,7 @@ with tab1:
     # =============================
     # 📦 FUNCIONES DE CARGA
     # =============================
+
     @st.cache_data(ttl=3600)
     def cargar_documentos_holded(tipo, inicio, fin):
         url = f"https://api.holded.com/api/invoicing/v1/documents/{tipo}"
@@ -49,13 +50,18 @@ with tab1:
             return pd.DataFrame()
     
     # =============================
-    # 📅 FILTROS DE FECHA
+    # 📅 FILTROS DE FECHA (por mes)
     # =============================
     st.sidebar.header("📅 Filtros de Fecha")
     hoy = datetime.today()
     hace_1_ano = hoy.replace(year=hoy.year - 1)
-    rango_fechas = st.sidebar.date_input("Selecciona un rango de fechas", [hace_1_ano, hoy])
-    fecha_inicio, fecha_fin = pd.to_datetime(rango_fechas[0]), pd.to_datetime(rango_fechas[1])
+    
+    # Selección de mes y año
+    mes = st.sidebar.selectbox("Selecciona un mes", list(range(1, 13)), index=hoy.month - 1)
+    año = st.sidebar.selectbox("Selecciona un año", list(range(hace_1_ano.year, hoy.year + 1)), index=1)
+    
+    fecha_inicio = datetime(año, mes, 1)
+    fecha_fin = pd.to_datetime(pd.Timestamp(fecha_inicio) + pd.offsets.MonthEnd(1))
     
     # =============================
     # 📥 CARGA DE DATOS
