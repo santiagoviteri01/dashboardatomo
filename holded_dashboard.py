@@ -21,10 +21,7 @@ HEADERS = {
     "accept": "application/json",
     "key": API_KEY
 }
-
-st.title("🔍 Exploración de datos desde Holded")
 HEADERS = {"accept": "application/json", "key": API_KEY}
-
 @st.cache_data(ttl=3600)
 def cargar_movimientos(inicio=None, fin=None):
     url = "https://api.holded.com/api/accounting/v1/journal"
@@ -42,7 +39,6 @@ hoy = datetime.today()
 hace_un_ano = hoy.replace(year=hoy.year - 1)
 
 st.title("📒 Prueba de conexión con el Journal contable de Holded")
-
 df_journal = cargar_movimientos(inicio=hace_un_ano, fin=hoy)
 
 if not df_journal.empty:
@@ -52,24 +48,6 @@ if not df_journal.empty:
 else:
     st.warning("⚠️ No se encontraron movimientos o hubo un error.")
     
-@st.cache_data(ttl=3600)
-def cargar_chartofaccounts():
-    url = "https://api.holded.com/api/accounting/v1/chartofaccounts"
-    r = requests.get(url, headers=HEADERS)
-    if r.status_code == 200:
-        return pd.DataFrame(r.json())
-    else:
-        st.error(f"❌ Error {r.status_code}: {r.text}")
-        return pd.DataFrame()
-
-df_chart = cargar_chartofaccounts()
-
-if not df_chart.empty:
-    st.write("✅ Primeras filas del JSON recibido:")
-    st.dataframe(df_chart.head(10))
-    st.code(df_chart.columns.tolist(), language="python")
-else:
-    st.warning("No se encontraron datos.")
 
 # ===================
 # 🧩 TABS PRINCIPALES
