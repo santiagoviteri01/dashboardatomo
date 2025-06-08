@@ -107,6 +107,11 @@ with tab1:
     df_pivot = agg.pivot_table(index=["cliente_final", "mes"], columns="tipo", values="valor", fill_value=0).reset_index()
     df_pivot["margen"] = df_pivot.get("ingreso", 0) - abs(df_pivot.get("gasto", 0))
     
+    # Asegura que las columnas existen antes del groupby final
+    for col in ["ingreso", "gasto", "margen"]:
+        if col not in df_pivot.columns:
+            df_pivot[col] = 0
+    
     # =============================
     # 📊 DASHBOARD
     # =============================
