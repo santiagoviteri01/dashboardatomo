@@ -105,7 +105,8 @@ with tab1:
     
     # Unimos y normalizamos
     df_completo = pd.concat([df_ingresos, df_gastos], ignore_index=True)
-    df_completo["mes"] = df_completo["fecha"].dt.to_period("M").astype(str)
+    df_completo["mes"] = df_completo["fecha"].dt.to_period("M")
+    df_completo["año_mes"] = df_completo["mes"].astype(str)
     
     # 🎯 Filtro por cliente
     clientes_disponibles = sorted(df_completo["cliente_final"].dropna().unique())
@@ -114,8 +115,9 @@ with tab1:
         df_completo = df_completo[df_completo["cliente_final"] == filtro_cliente]
     
     # Agregación
-    df_agg = df_completo.groupby(["cliente_final", "mes", "tipo"])["valor"].sum().reset_index()
-    df_pivot = df_agg.pivot_table(index=["cliente_final", "mes"], columns="tipo", values="valor", fill_value=0).reset_index()
+    df_agg = df_completo.groupby(["cliente_final", "año_mes", "tipo"])["valor"].sum().reset_index()
+    df_pivot = df_agg.pivot_table(index=["cliente_final", "año_mes"], columns="tipo", values="valor", fill_value=0).reset_index()
+    df_pivot.rename(columns={"año_mes": "mes"}, inplace=True)
     df_pivot["margen"] = df_pivot.get("ingreso", 0) - abs(df_pivot.get("gasto", 0))
     
     for col in ["ingreso", "gasto", "margen"]:
