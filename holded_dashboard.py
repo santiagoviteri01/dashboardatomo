@@ -77,8 +77,19 @@ with tab1:
         df_gastos["tipo"] = "gasto"
         df_gastos["valor"] = -df_gastos["total"]
     
-    # Unimos y normalizamos
+    columnas_ingresos = list(set(df_ingresos.columns))
+    columnas_gastos = list(set(df_gastos.columns))
+    
+    # Verificamos si las columnas esperadas existen
     columnas_necesarias = ["contactName", "date", "tipo", "valor"]
+    faltantes_ingresos = [c for c in columnas_necesarias if c not in columnas_ingresos]
+    faltantes_gastos = [c for c in columnas_necesarias if c not in columnas_gastos]
+    
+    if faltantes_ingresos or faltantes_gastos:
+        st.error(f"❌ Columnas faltantes: Ingresos: {faltantes_ingresos}, Gastos: {faltantes_gastos}")
+        st.stop()
+    
+    # Concatenación segura
     df_completo = pd.concat([
         df_ingresos[columnas_necesarias],
         df_gastos[columnas_necesarias]
