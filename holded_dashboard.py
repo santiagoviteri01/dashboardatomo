@@ -49,20 +49,6 @@ with tab1:
             st.error(f"❌ Error {r.status_code}: {r.text[:300]}")
             return pd.DataFrame()
     
-@st.cache_data(ttl=3600)
-def cargar_documentos_holded(tipo, inicio, fin):
-    url = f"https://api.holded.com/api/invoicing/v1/documents/{tipo}"
-    params = {
-        "starttmp": int(inicio.timestamp()),
-        "endtmp": int(fin.timestamp()),
-        "sort": "created-asc"
-    }
-    r = requests.get(url, headers=HEADERS, params=params)
-    if r.status_code == 200:
-        return pd.DataFrame(r.json())
-    else:
-        st.error(f"❌ Error {r.status_code}: {r.text[:300]}")
-        return pd.DataFrame()
 
     # =============================
     # 📅 FILTROS DE FECHA (de mes-año a mes-año)
