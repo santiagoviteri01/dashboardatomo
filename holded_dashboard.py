@@ -349,9 +349,22 @@ with tab2:
     
     with st.form("filtros"):
         today = date.today()
+        raw_fechas = st.session_state.get("fechas", (today, today))
+    
+        # 🔑 Normalizar lo que venga del session_state
+        if isinstance(raw_fechas, (tuple, list)):
+            fechas_value = tuple(
+                v if isinstance(v, date) else getattr(v, "date", lambda: today)()
+                for v in raw_fechas
+            )
+        elif isinstance(raw_fechas, date):
+            fechas_value = (raw_fechas, raw_fechas)
+        else:
+            fechas_value = (today, today)
+    
         fechas = st.date_input(
             "📅 Selecciona fecha o rango de fechas",
-            value=ensure_date_tuple(st.session_state.get("fechas", (today, today))),
+            value=fechas_value,
             min_value=date(2000, 1, 1),
         )
         st.session_state["fechas"] = fechas
