@@ -779,7 +779,7 @@ with tab3:
     def get_holded_token():
         """Obtener token de autenticación de Holded"""
         try:
-            api_key = st.secrets.get("holded", {}).get("api_key", "")
+            api_key = "fafbb8191b37e6b696f192e70b4a198c"
             if not api_key:
                 st.error("❌ No se encontró la API key de Holded en secrets")
                 return None
