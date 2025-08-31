@@ -701,13 +701,21 @@ with tab3:
     def get_holded_token():
         """Obtener token de autenticación de Holded"""
         try:
-            api_key = "fafbb8191b37e6b696f192e70b4a198c"
-            if not api_key:
-                st.error("❌ No se encontró la API key de Holded en secrets")
+            # Intentar diferentes estructuras de secrets
+            token = None
+            if "holded" in st.secrets:
+                token = st.secrets["holded"].get("api_key") or st.secrets["holded"].get("token")
+            elif "HOLDED_API_KEY" in st.secrets:
+                token = st.secrets["HOLDED_API_KEY"]
+            elif hasattr(st.secrets, "holded_api_key"):
+                token = st.secrets.holded_api_key
+                
+            if not token:
+                st.warning("⚠️ No se encontró la API key de Holded en secrets. Usando datos de ejemplo.")
                 return None
-            return api_key
+            return token
         except Exception as e:
-            st.error(f"❌ Error obteniendo token: {e}")
+            st.warning(f"⚠️ Error obteniendo token de Holded: {e}. Usando datos de ejemplo.")
             return None
 
     def make_holded_request(endpoint, params=None):
@@ -716,18 +724,45 @@ with tab3:
         if not token:
             return None
         
+        import requests
+        
         base_url = "https://api.holded.com/api"
         headers = {
             "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "Accept": "application/json"
         }
         
         try:
-            response = requests.get(f"{base_url}/{endpoint}", headers=headers, params=params or {})
+            url = f"{base_url}/{endpoint}"
+            response = requests.get(url, headers=headers, params=params or {}, timeout=30)
+            
+            if response.status_code == 401:
+                st.error("❌ Token de Holded inválido o expirado. Verifica la configuración.")
+                return None
+            elif response.status_code == 403:
+                st.error("❌ Sin permisos para acceder a este endpoint de Holded.")
+                return None
+            elif response.status_code == 404:
+                st.warning("⚠️ Endpoint no encontrado en Holded API.")
+                return None
+                
             response.raise_for_status()
+            
+            # Verificar que la respuesta no esté vacía
+            if not response.text.strip():
+                return []
+                
             return response.json()
+            
+        except requests.exceptions.Timeout:
+            st.error("❌ Timeout en la conexión con Holded API")
+            return None
         except requests.exceptions.RequestException as e:
             st.error(f"❌ Error en petición a Holded: {e}")
+            return None
+        except ValueError as e:
+            st.error(f"❌ Error procesando respuesta JSON de Holded: {e}")
             return None
 
     def list_documents(doc_type, start_date, end_date):
@@ -1133,24 +1168,26 @@ with tab3:
             st.subheader("📈 Evolución P&L")
             
             # Preparar datos para el gráfico
-            chart_data = df_pl[["🗓️ Año-Mes", "Ingresos", "Margen Bruto", "EBITDA", "Resultado Neto"]].melt(
+            
+            chart_data = df_pl[chart_cols].melt(
                 id_vars=["🗓️ Año-Mes"],
                 var_name="Métrica",
                 value_name="Valor"
             )
             
-            chart = (
-                alt.Chart(chart_data)
-                .mark_line(point=True, strokeWidth=3)
-                .encode(
-                    x=alt.X("🗓️ Año-Mes:O", title="Período"),
-                    y=alt.Y("Valor:Q", title="Importe ($)"),
-                    color=alt.Color("Métrica:N", scale=alt.Scale(scheme='category10')),
-                    tooltip=["🗓️ Año-Mes:O", "Métrica:N", "Valor:Q"]
+            if not chart_data.empty:
+                chart = (
+                    alt.Chart(chart_data)
+                    .mark_line(point=True, strokeWidth=3)
+                    .encode(
+                        x=alt.X("🗓️ Año-Mes:O", title="Período"),
+                        y=alt.Y("Valor:Q", title="Importe ($)"),
+                        color=alt.Color("Métrica:N", scale=alt.Scale(scheme='category10')),
+                        tooltip=["🗓️ Año-Mes:O", "Métrica:N", "Valor:Q"]
+                    )
+                    .properties(height=400, title="Evolución de Métricas P&L")
                 )
-                .properties(height=400, title="Evolución de Métricas P&L")
-            )
-            st.altair_chart(chart, use_container_width=True)
+                st.altair_chart(chart, use_container_width=True)
 
             # Gráfico de composición de gastos
             st.subheader("🥧 Composición de Gastos")
@@ -1159,9 +1196,10 @@ with tab3:
             gastos_totales = {}
             
             for col in gastos_cols:
-                total = abs(df_pl[col].sum())
-                if total > 0:
-                    gastos_totales[col] = total
+                if col in df_pl.columns:
+                    total = abs(df_pl[col].sum())
+                    if total > 0:
+                        gastos_totales[col] = total
             
             if gastos_totales:
                 gastos_df = pd.DataFrame(list(gastos_totales.items()), columns=["Categoría", "Importe"])
@@ -1179,37 +1217,39 @@ with tab3:
                 st.altair_chart(pie_chart, use_container_width=True)
 
             # Detalle por cuenta si se solicita
-            if mostrar_detalle:
+            if mostrar_detalle and not usar_demo:
                 st.subheader("🔍 Detalle por Cuenta Contable")
                 
                 # Combinar datos de compras y libro diario
                 detalle_rows = []
                 
                 # Desde compras
-                for _, row in df_comp.iterrows():
-                    detalle_rows.append({
-                        "Período": row.get("🗓️ Año-Mes"),
-                        "Cuenta": row.get("cuenta", "N/A"),
-                        "Descripción": row.get("nombre_cuenta", ""),
-                        "Categoría": row.get("categoria"),
-                        "Importe": row.get("importe", 0),
-                        "Origen": "Compras"
-                    })
+                if 'df_comp' in locals() and not df_comp.empty:
+                    for _, row in df_comp.iterrows():
+                        detalle_rows.append({
+                            "Período": row.get("🗓️ Año-Mes", ""),
+                            "Cuenta": row.get("cuenta", "N/A"),
+                            "Descripción": row.get("nombre_cuenta", ""),
+                            "Categoría": row.get("categoria", ""),
+                            "Importe": row.get("importe", 0),
+                            "Origen": "Compras"
+                        })
                 
                 # Desde libro diario
-                for _, row in df_ledger.iterrows():
-                    detalle_rows.append({
-                        "Período": row.get("🗓️ Año-Mes"),
-                        "Cuenta": row.get("cuenta", "N/A"),
-                        "Descripción": row.get("descripcion", ""),
-                        "Categoría": row.get("categoria"),
-                        "Importe": row.get("importe", 0),
-                        "Origen": "Libro Diario"
-                    })
+                if 'df_ledger' in locals() and not df_ledger.empty:
+                    for _, row in df_ledger.iterrows():
+                        detalle_rows.append({
+                            "Período": row.get("🗓️ Año-Mes", ""),
+                            "Cuenta": row.get("cuenta", "N/A"),
+                            "Descripción": row.get("descripcion", ""),
+                            "Categoría": row.get("categoria", ""),
+                            "Importe": row.get("importe", 0),
+                            "Origen": "Libro Diario"
+                        })
                 
                 if detalle_rows:
                     df_detalle = pd.DataFrame(detalle_rows)
-                    df_detalle = df_detalle.round(2)
+                    df_detalle["Importe"] = df_detalle["Importe"].round(2)
                     
                     # Filtros para el detalle
                     col_filter1, col_filter2 = st.columns(2)
@@ -1230,27 +1270,30 @@ with tab3:
                     st.dataframe(df_filtered, use_container_width=True, height=400)
                     
                     # Resumen por categoría
-                    resumen_cat = df_filtered.groupby("Categoría")["Importe"].sum().reset_index()
-                    resumen_cat = resumen_cat.sort_values("Importe")
-                    
-                    st.subheader("📊 Resumen por Categoría")
-                    
-                    bar_chart = (
-                        alt.Chart(resumen_cat)
-                        .mark_bar()
-                        .encode(
-                            x=alt.X("Importe:Q", title="Importe ($)"),
-                            y=alt.Y("Categoría:N", sort='-x', title="Categoría"),
-                            color=alt.condition(
-                                alt.datum.Importe > 0,
-                                alt.value("steelblue"),
-                                alt.value("orange")
-                            ),
-                            tooltip=["Categoría:N", "Importe:Q"]
+                    if not df_filtered.empty:
+                        resumen_cat = df_filtered.groupby("Categoría")["Importe"].sum().reset_index()
+                        resumen_cat = resumen_cat.sort_values("Importe")
+                        
+                        st.subheader("📊 Resumen por Categoría")
+                        
+                        bar_chart = (
+                            alt.Chart(resumen_cat)
+                            .mark_bar()
+                            .encode(
+                                x=alt.X("Importe:Q", title="Importe ($)"),
+                                y=alt.Y("Categoría:N", sort='-x', title="Categoría"),
+                                color=alt.condition(
+                                    alt.datum.Importe > 0,
+                                    alt.value("steelblue"),
+                                    alt.value("orange")
+                                ),
+                                tooltip=["Categoría:N", "Importe:Q"]
+                            )
+                            .properties(height=300)
                         )
-                        .properties(height=300)
-                    )
-                    st.altair_chart(bar_chart, use_container_width=True)
+                        st.altair_chart(bar_chart, use_container_width=True)
+                else:
+                    st.info("📋 No hay detalles por cuenta disponibles para mostrar.")
 
             # Exportar datos
             st.subheader("📥 Exportar Datos")
@@ -1258,16 +1301,17 @@ with tab3:
             col_exp1, col_exp2 = st.columns(2)
             
             # Exportar P&L resumido
-            csv_pl = df_display.to_csv(index=False)
-            col_exp1.download_button(
-                label="💾 Descargar P&L (CSV)",
-                data=csv_pl,
-                file_name=f"pl_holded_{inicio_pl.strftime('%Y%m%d')}_{fin_pl.strftime('%Y%m%d')}.csv",
-                mime="text/csv"
-            )
+            if not df_display.empty:
+                csv_pl = df_display.to_csv(index=False)
+                col_exp1.download_button(
+                    label="💾 Descargar P&L (CSV)",
+                    data=csv_pl,
+                    file_name=f"pl_holded_{inicio_pl.strftime('%Y%m%d')}_{fin_pl.strftime('%Y%m%d')}.csv",
+                    mime="text/csv"
+                )
             
             # Exportar detalle si existe
-            if mostrar_detalle and 'df_detalle' in locals():
+            if mostrar_detalle and 'df_detalle' in locals() and not df_detalle.empty:
                 csv_detalle = df_detalle.to_csv(index=False)
                 col_exp2.download_button(
                     label="📋 Descargar Detalle (CSV)",
@@ -1277,44 +1321,82 @@ with tab3:
                 )
 
     except Exception as e:
-        st.error(f"❌ Error procesando P&L desde Holded: {str(e)}")
-        st.exception(e)  # Mostrar traceback completo para debugging
+        st.error(f"❌ Error procesando P&L: {str(e)}")
         
         # Información adicional para debugging
         with st.expander("🔧 Información de Debug"):
+            st.write("**Error completo:**")
+            st.exception(e)
+            
             st.write("**Variables disponibles:**")
             local_vars = locals()
-            for var_name in ['df_inv', 'df_pur', 'df_comp', 'df_ledger']:
+            debug_vars = ['df_inv', 'df_pur', 'df_comp', 'df_ledger', 'df_pl']
+            for var_name in debug_vars:
                 if var_name in local_vars:
-                    st.write(f"- {var_name}: {type(local_vars[var_name])}, Shape: {local_vars[var_name].shape if hasattr(local_vars[var_name], 'shape') else 'N/A'}")
+                    var_value = local_vars[var_name]
+                    if hasattr(var_value, 'shape'):
+                        st.write(f"- {var_name}: {type(var_value)}, Shape: {var_value.shape}")
+                        if hasattr(var_value, 'columns'):
+                            st.write(f"  Columnas: {list(var_value.columns)}")
+                    else:
+                        st.write(f"- {var_name}: {type(var_value)}")
             
             st.write("**Configuración:**")
             st.write(f"- Período: {inicio_pl} - {fin_pl}")
             st.write(f"- Usar libro diario: {usar_libro}")
+            st.write(f"- Usar datos demo: {usar_demo}")
             st.write(f"- Token Holded disponible: {get_holded_token() is not None}")
+            
+        # Ofrecer datos de ejemplo como fallback
+        if st.button("🧪 Cargar datos de ejemplo", key="fallback_demo"):
+            st.session_state["force_demo"] = True
+            st.rerun()
 
     # Información adicional
     with st.expander("ℹ️ Información sobre P&L"):
         st.markdown("""
         **📊 Métricas calculadas:**
-        - **Ingresos**: Facturación de ventas
-        - **Margen Bruto**: Ingresos - Aprovisionamientos
+        - **Ingresos**: Facturación de ventas del período
+        - **Margen Bruto**: Ingresos - Aprovisionamientos (compras)
         - **EBITDA**: Margen Bruto - Gastos de personal - Otros gastos de explotación
-        - **Resultado Operativo**: EBITDA + Otros resultados
+        - **Resultado Operativo**: EBITDA + Otros resultados extraordinarios
         - **Resultado Neto**: Resultado Operativo + Resultado Financiero
         
         **🔄 Fuentes de datos:**
-        - Facturas de venta (Ingresos)
-        - Facturas de compra (Gastos por categoría)
-        - Libro diario contable (Refinamiento y gastos adicionales)
+        - **Facturas de venta**: Para calcular ingresos por período
+        - **Facturas de compra**: Para gastos categorizados por cuenta contable
+        - **Libro diario contable**: Para refinamiento y gastos adicionales (nóminas, financieros, etc.)
         
-        **📋 Clasificación automática de cuentas:**
-        - Códigos 7xx: Ingresos
-        - Códigos 60x: Aprovisionamientos  
-        - Códigos 64x: Gastos de personal
-        - Códigos 66x/67x: Gastos/Ingresos financieros
-        - Otros 6xx: Otros gastos de explotación
+        **📋 Clasificación automática de cuentas contables:**
+        - **7xx**: Ingresos de explotación
+        - **60x**: Aprovisionamientos (compras y consumos)
+        - **64x**: Gastos de personal (sueldos, SS, etc.)
+        - **66x/67x**: Gastos e ingresos financieros
+        - **76x**: Ingresos financieros y diferencias de cambio
+        - **Otros 6xx**: Otros gastos de explotación
+        
+        **🔧 Configuración necesaria:**
+        
+        Para conectar con Holded, configura en `st.secrets`:
+        ```toml
+        [holded]
+        api_key = "tu-api-key-de-holded"
+        ```
+        
+        **🧪 Modo Demo:**
+        - Activa "Usar datos de ejemplo" para probar sin conexión a Holded
+        - Los datos demo incluyen patrones realistas de ingresos y gastos
+        - Útil para testing y presentaciones
         """)
+        
+        if usar_demo:
+            st.success("🧪 **Modo Demo Activo** - Los datos mostrados son ejemplos para demostración")
+        elif get_holded_token():
+            st.success("✅ **Conectado a Holded** - Usando datos reales de tu cuenta")
+        else:
+            st.warning("⚠️ **Sin conexión a Holded** - Configura tu API key para usar datos reales")
+
+# ====== FIN DEL CÓDIGO ======
 
 # ====== FIN DEL CÓDIGO ======
 
