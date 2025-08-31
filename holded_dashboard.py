@@ -20,7 +20,7 @@ BASE_INV = "https://api.holded.com/api/invoicing/v1"
 BASE_ACC = "https://api.holded.com/api/accounting/v1"
 HEADERS = {"accept": "application/json", "key": API_KEY}
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=60)
 def list_documents(doc_type: str, start_dt: datetime, end_dt: datetime, page_size=200):
     """Lista documentos de ventas/compras (usa starttmp/endtmp)."""
     url = f"{BASE_INV}/documents/{doc_type}"
@@ -55,21 +55,21 @@ def list_documents(doc_type: str, start_dt: datetime, end_dt: datetime, page_siz
         page += 1
     return pd.DataFrame(out)
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=60)
 def get_document_detail(doc_type: str, doc_id: str):
     """Detalle de documento (para leer líneas y cuentas, si están disponibles)."""
     url = f"{BASE_INV}/documents/{doc_type}/{doc_id}"
     r = requests.get(url, headers=HEADERS, timeout=30)
     return r.json() if r.status_code == 200 else None
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=60)
 def list_chart_of_accounts():
     """Plan de cuentas de Holded (si tienes contabilidad activa)."""
     url = f"{BASE_ACC}/chartofaccounts"
     r = requests.get(url, headers=HEADERS, timeout=30)
     return r.json() if r.status_code == 200 else []
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=60)
 def list_daily_ledger(start_dt: datetime, end_dt: datetime, page_size=500):
     """Libro diario (más fiel). Intentamos filtrar por fecha si el endpoint lo soporta."""
     url = f"{BASE_ACC}/dailyledger"
@@ -199,7 +199,7 @@ with tab1:
     # 📦 FUNCIONES DE CARGA
     # =============================
 
-    @st.cache_data(ttl=3600)
+    @st.cache_data(ttl=60)
     def cargar_documentos_holded(tipo, inicio, fin):
         url = f"https://api.holded.com/api/invoicing/v1/documents/{tipo}"
         params = {
