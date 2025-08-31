@@ -576,7 +576,7 @@ with tab2:
     #
     st.markdown("---")
     st.header("🔎 Top 20 Clientes por KPI")
-
+    
     with st.form("top20"):
         # 1) Calendario acotado al rango original
         fechas_detalle = st.date_input(
@@ -590,22 +590,22 @@ with tab2:
             sub_start, sub_end = fechas_detalle
         else:
             sub_start = sub_end = fechas_detalle
-
+    
         # 2) Selector de KPI
         kpi_sel = st.selectbox(
             "📊 Selecciona KPI",
             list(kpi_map.keys()),
             key="det_kpi"
         )
-
+    
         # 3) **ESTE** debe ir **dentro** del with y al final
         top20_btn = st.form_submit_button("Mostrar Top 20")
-
+    
     # — Fuera del form, reaccionamos al submit —
     if top20_btn:
         sub_start_str = sub_start.strftime("%Y-%m-%d")
         sub_end_str   = sub_end.strftime("%Y-%m-%d")
-
+    
         # Desempaquetar definición de KPI
         agg, from_clause, ts_col, _ = kpi_map[kpi_sel]
         if "plasma_core.users" in from_clause:
@@ -615,13 +615,13 @@ with tab2:
         else:
             # Para todas las métricas de rounds_entries
             alias = "re"
-
+    
         # Construir cláusula WHERE con alias correcto
         where_clause = (
             f"{alias}.{ts_col} BETWEEN "
             f"'{sub_start_str} 00:00:00' AND '{sub_end_str} 23:59:59'"
         )
-
+    
         # Generar SQL según origen
         if "plasma_core.users" in from_clause:
             sql = f"""
@@ -659,14 +659,13 @@ with tab2:
                  ORDER BY valor DESC
                  LIMIT 20
             """
-
+    
         # Ejecutar y mostrar
         df_top20 = consultar(sql)
         if not df_top20.empty:
             st.table(df_top20.set_index("user_id").round(2))
         else:
             st.info("⚠️ No hay datos para ese KPI en el periodo seleccionado.")
-    
 
 
 # ====== TAB 3: P&L desde Holded ======
