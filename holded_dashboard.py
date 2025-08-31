@@ -702,13 +702,13 @@ with tab3:
         """Obtener token de autenticación de Holded"""
         try:
             # Intentar diferentes estructuras de secrets
-            token = None
-            if "holded" in st.secrets:
-                token = st.secrets["holded"].get("api_key") or st.secrets["holded"].get("token")
-            elif "HOLDED_API_KEY" in st.secrets:
-                token = st.secrets["HOLDED_API_KEY"]
-            elif hasattr(st.secrets, "holded_api_key"):
-                token = st.secrets.holded_api_key
+            token = "fafbb8191b37e6b696f192e70b4a198c"
+            #if "holded" in st.secrets:
+            #    token = st.secrets["holded"].get("api_key") or st.secrets["holded"].get("token")
+            #elif "HOLDED_API_KEY" in st.secrets:
+            #    token = st.secrets["HOLDED_API_KEY"]
+            #elif hasattr(st.secrets, "holded_api_key"):
+            #    token = st.secrets.holded_api_key
                 
             if not token:
                 st.warning("⚠️ No se encontró la API key de Holded en secrets. Usando datos de ejemplo.")
