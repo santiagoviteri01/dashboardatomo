@@ -717,7 +717,6 @@ with tab3:
         except Exception as e:
             st.warning(f"⚠️ Error obteniendo token de Holded: {e}. Usando datos de ejemplo.")
             return None
-
     def make_holded_request(endpoint, params=None):
         """Hacer petición a la API de Holded"""
         token = get_holded_token()
@@ -728,9 +727,8 @@ with tab3:
         
         base_url = "https://api.holded.com/api"
         headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-            "Accept": "application/json"
+            "accept": "application/json",
+            "key": token
         }
         
         try:
@@ -749,10 +747,9 @@ with tab3:
                 
             response.raise_for_status()
             
-            # Verificar que la respuesta no esté vacía
             if not response.text.strip():
                 return []
-                
+            
             return response.json()
             
         except requests.exceptions.Timeout:
@@ -764,6 +761,8 @@ with tab3:
         except ValueError as e:
             st.error(f"❌ Error procesando respuesta JSON de Holded: {e}")
             return None
+
+            
 
     def list_documents(doc_type, start_date, end_date):
         """Listar documentos de Holded en un rango de fechas"""
