@@ -335,17 +335,26 @@ with tab2:
         st.session_state["filtros_ok"] = False
     if "top20_ok" not in st.session_state:
         st.session_state["top20_ok"] = False
+        
 
-    # -- Formulario de filtros --
+    def ensure_date_tuple(val):
+        if isinstance(val, tuple) or isinstance(val, list):
+            return tuple(
+                v if isinstance(v, date) else date.fromisoformat(str(v))
+                for v in val
+            )
+        if isinstance(val, (date, datetime)):
+            return (val, val)
+        return (today, today)
+    
     with st.form("filtros"):
         today = date.today()
         fechas = st.date_input(
             "📅 Selecciona fecha o rango de fechas",
-            value=st.session_state.get("fechas", (today, today)),
+            value=ensure_date_tuple(st.session_state.get("fechas", (today, today))),
             min_value=date(2000, 1, 1),
-            max_value=today,
-            key="fecha_tab2"
         )
+        st.session_state["fechas"] = fechas
         # Desempaquetar
         if isinstance(fechas, (tuple, list)) and len(fechas) == 2:
             sd, ed = fechas
