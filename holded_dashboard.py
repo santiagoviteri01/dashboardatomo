@@ -6,24 +6,14 @@ import mysql.connector
 from datetime import datetime
 from datetime import date
 import altair as alt
+import requests
 st.set_page_config(page_title="Dashboard de Márgenes", layout="wide")
 st.title("📊 Dashboard Interactivo Holded-Financiero")
-
-# ===================
-# 📁 SUBIR ARCHIVO
-# ===================
-import requests
-import pandas as pd
-import streamlit as st
-
 API_KEY = "fafbb8191b37e6b696f192e70b4a198c"
 HEADERS = {
     "accept": "application/json",
     "key": API_KEY
 }
-# ====== Helpers Holded P&L (puedes subirlos a la sección superior del script) ======
-import requests
-import pandas as pd
 from datetime import datetime
 
 BASE_INV = "https://api.holded.com/api/invoicing/v1"
@@ -677,123 +667,123 @@ with tab2:
         else:
             st.info("⚠️ No hay datos para ese KPI en el periodo seleccionado.")
 # ====== UI del Tab 3: P&L desde Holded ======
-    with tab3:
-        st.header("📑 P&L Holded (API)")
-        st.caption("Calculado desde documentos de Holded y (opcional) libro diario contable para mayor precisión.")
-    
-        # Rango de fechas (reutilizamos el sidebar del Tab 1 si quieres; aquí lo hacemos local)
-        colA, colB = st.columns(2)
-        hoy = datetime.today()
-        inicio_pl = colA.date_input("📅 Inicio", value=hoy.replace(day=1))
-        fin_pl    = colB.date_input("📅 Fin", value=hoy)
-        inicio_pl = datetime(inicio_pl.year, inicio_pl.month, inicio_pl.day)
-        fin_pl    = datetime(fin_pl.year, fin_pl.month, fin_pl.day, 23, 59, 59)
-    
-        usar_libro = st.toggle("🔎 Usar contabilidad (Libro diario) si está disponible", value=True)
-    
-        # 1) Ventas (Ingresos) por mes
-        df_inv = list_documents("invoice", inicio_pl, fin_pl)
-        if df_inv.empty:
-            st.warning("No se encontraron facturas de venta en el rango.")
-        df_inv["_fecha"] = pd.to_datetime(df_inv.get("date"), unit="s", errors="coerce")
-        df_inv["_ym"] = df_inv["_fecha"].dt.to_period("M").astype(str)
-        df_inv["importe"] = pd.to_numeric(df_inv.get("subTotal"), errors="coerce").fillna(pd.to_numeric(df_inv.get("total"), errors="coerce")).fillna(0.0)
-        ingresos_mes = df_inv.groupby("_ym")["importe"].sum().rename("Ingresos").reset_index()
-    
-        # 2) Compras: intentamos desglosar por cuenta leyendo líneas
-        df_pur = list_documents("purchase", inicio_pl, fin_pl)
-        compras_rows = []
-        for _, row in df_pur.iterrows():
-            det = get_document_detail("purchase", str(row.get("id") or row.get("_id") or row.get("docId") or ""))
-            for (fecha, acct, acct_name, amt) in parse_purchase_lines(det):
-                ym = pd.to_datetime(fecha).to_period("M").astype(str) if pd.notna(fecha) else pd.to_datetime(row.get("date"), unit="s", errors="coerce").to_period("M").astype(str)
-                cat = classify_account(str(acct), acct_name)
-                compras_rows.append({"🗓️ Año-Mes": ym, "cuenta": acct, "nombre_cuenta": acct_name, "categoria": cat, "importe": amt})
-    
-        df_comp = pd.DataFrame(compras_rows)
-        if df_comp.empty:
-            # fallback: si no hay líneas, tratamos todo como Otros gastos de explotación
-            df_pur["_fecha"] = pd.to_datetime(df_pur.get("date"), unit="s", errors="coerce")
-            df_pur["_ym"] = df_pur["_fecha"].dt.to_period("M").astype(str)
-            df_comp = df_pur.groupby("_ym").apply(lambda g: pd.Series({"categoria": "Otros gastos de explotación", "importe": -abs(pd.to_numeric(g.get("total"), errors="coerce").fillna(0).sum())})).reset_index().rename(columns={"_ym":"🗓️ Año-Mes"})
-    
-        # 3) (Opcional) Libro diario para afinar categorías (personal, financieros, etc.)
-        ledger_rows = []
-        if usar_libro:
-            asientos = list_daily_ledger(inicio_pl, fin_pl)
-            for a in asientos:
-                fecha = a.get("date") or a.get("ts")
-                fecha = pd.to_datetime(fecha, errors="coerce")
-                ym = fecha.to_period("M").astype(str) if pd.notna(fecha) else None
-                # campos comunes: accountCode/account/name y amounts (debit/credit/amount)
-                acct_code = str(a.get("accountCode") or a.get("account") or "")
-                acct_name = str(a.get("accountName") or "")
-                # importe: intentamos 'amount' y si no, debit - credit
-                amt = a.get("amount", None)
-                if amt is None:
-                    debit = a.get("debit", 0) or 0
-                    credit = a.get("credit", 0) or 0
-                    amt = float(debit) - float(credit)
-                cat = classify_account(acct_code, acct_name)
-                if ym:
-                    ledger_rows.append({"🗓️ Año-Mes": ym, "categoria": cat, "importe": float(amt)})
-        df_ledger = pd.DataFrame(ledger_rows)
-    
-        # 4) Agregación por KPI P&L
-        # Base: Ingresos desde facturas + gastos desde compras (si activamos libro, lo usamos para refinar y sumar también financieros y personal)
-        # Empezamos con facturación:
-        base = ingresos_mes.rename(columns={"_ym":"🗓️ Año-Mes"}).copy()
-        # Gastos (compras por categoría)
-        comp_piv = df_comp.groupby(["🗓️ Año-Mes","categoria"])["importe"].sum().unstack(fill_value=0).reset_index()
-        for col in ["Aprovisionamientos","Gastos de personal","Otros gastos de explotación","Ingresos financieros","Gastos financieros","Diferencias de cambio","Otros resultados"]:
-            if col not in comp_piv.columns:
-                comp_piv[col] = 0.0
-        df_pl = base.merge(comp_piv, on="🗓️ Año-Mes", how="outer").fillna(0)
-    
-        # Si hay libro diario, sumamos/sobrescribimos por categoría (prioridad contable)
-        if not df_ledger.empty:
-            add = df_ledger.groupby(["🗓️ Año-Mes","categoria"])["importe"].sum().unstack(fill_value=0).reset_index()
-            for col in add.columns:
-                if col != "🗓️ Año-Mes":
-                    # sumamos (libro puede incluir nóminas, financieros, dif. de cambio que no estarán en compras)
-                    df_pl[col] = df_pl.get(col, 0) + add[col]
-    
-        # KPIs derivados
-        for c in ["Ingresos","Aprovisionamientos","Gastos de personal","Otros gastos de explotación","Ingresos financieros","Gastos financieros","Diferencias de cambio","Otros resultados"]:
-            if c not in df_pl.columns:
-                df_pl[c] = 0.0
-    
-        df_pl["Margen Bruto"] = df_pl["Ingresos"] + df_pl["Aprovisionamientos"]  # compras negativas
-        df_pl["EBITDA aprox"] = df_pl["Margen Bruto"] + df_pl["Gastos de personal"] + df_pl["Otros gastos de explotación"]
-        df_pl["Resultado antes de finanzas"] = df_pl["EBITDA aprox"] + df_pl["Otros resultados"]
-        df_pl["Resultado neto aprox"] = (df_pl["Resultado antes de finanzas"]
-                                         + df_pl["Ingresos financieros"]
-                                         + df_pl["Gastos financieros"]
-                                         + df_pl["Diferencias de cambio"])
-    
-        df_pl = df_pl.sort_values("🗓️ Año-Mes")
-        st.subheader("KPIs P&L")
-        tot = df_pl.select_dtypes(include=[float,int]).sum(numeric_only=True)
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Ingresos", f"${tot['Ingresos']:,.2f}")
-        col2.metric("Margen Bruto", f"${tot['Margen Bruto']:,.2f}")
-        col3.metric("EBITDA aprox", f"${tot['EBITDA aprox']:,.2f}")
-        col4.metric("Resultado neto aprox", f"${tot['Resultado neto aprox']:,.2f}")
-    
-        st.subheader("Detalle por mes")
-        mostrar_cols = ["🗓️ Año-Mes","Ingresos","Aprovisionamientos","Gastos de personal","Otros gastos de explotación",
-                        "Margen Bruto","EBITDA aprox","Otros resultados","Ingresos financieros","Gastos financieros",
-                        "Diferencias de cambio","Resultado antes de finanzas","Resultado neto aprox"]
-        st.dataframe(df_pl[mostrar_cols], use_container_width=True)
-    
-        st.subheader("Evolución")
-        import altair as alt
-        evo = df_pl.melt(id_vars=["🗓️ Año-Mes"], value_vars=["Ingresos","Margen Bruto","EBITDA aprox","Resultado neto aprox"],
-                         var_name="KPI", value_name="Valor")
-        chart = (alt.Chart(evo)
-                    .mark_line(point=True)
-                    .encode(x="🗓️ Año-Mes:O", y="Valor:Q", color="KPI:N", tooltip=["🗓️ Año-Mes","KPI","Valor:Q"])
-                    .properties(height=320))
-        st.altair_chart(chart, use_container_width=True)
+with tab3:
+    st.header("📑 P&L Holded (API)")
+    st.caption("Calculado desde documentos de Holded y (opcional) libro diario contable para mayor precisión.")
+
+    # Rango de fechas (reutilizamos el sidebar del Tab 1 si quieres; aquí lo hacemos local)
+    colA, colB = st.columns(2)
+    hoy = datetime.today()
+    inicio_pl = colA.date_input("📅 Inicio", value=hoy.replace(day=1))
+    fin_pl    = colB.date_input("📅 Fin", value=hoy)
+    inicio_pl = datetime(inicio_pl.year, inicio_pl.month, inicio_pl.day)
+    fin_pl    = datetime(fin_pl.year, fin_pl.month, fin_pl.day, 23, 59, 59)
+
+    usar_libro = st.toggle("🔎 Usar contabilidad (Libro diario) si está disponible", value=True)
+
+    # 1) Ventas (Ingresos) por mes
+    df_inv = list_documents("invoice", inicio_pl, fin_pl)
+    if df_inv.empty:
+        st.warning("No se encontraron facturas de venta en el rango.")
+    df_inv["_fecha"] = pd.to_datetime(df_inv.get("date"), unit="s", errors="coerce")
+    df_inv["_ym"] = df_inv["_fecha"].dt.to_period("M").astype(str)
+    df_inv["importe"] = pd.to_numeric(df_inv.get("subTotal"), errors="coerce").fillna(pd.to_numeric(df_inv.get("total"), errors="coerce")).fillna(0.0)
+    ingresos_mes = df_inv.groupby("_ym")["importe"].sum().rename("Ingresos").reset_index()
+
+    # 2) Compras: intentamos desglosar por cuenta leyendo líneas
+    df_pur = list_documents("purchase", inicio_pl, fin_pl)
+    compras_rows = []
+    for _, row in df_pur.iterrows():
+        det = get_document_detail("purchase", str(row.get("id") or row.get("_id") or row.get("docId") or ""))
+        for (fecha, acct, acct_name, amt) in parse_purchase_lines(det):
+            ym = pd.to_datetime(fecha).to_period("M").astype(str) if pd.notna(fecha) else pd.to_datetime(row.get("date"), unit="s", errors="coerce").to_period("M").astype(str)
+            cat = classify_account(str(acct), acct_name)
+            compras_rows.append({"🗓️ Año-Mes": ym, "cuenta": acct, "nombre_cuenta": acct_name, "categoria": cat, "importe": amt})
+
+    df_comp = pd.DataFrame(compras_rows)
+    if df_comp.empty:
+        # fallback: si no hay líneas, tratamos todo como Otros gastos de explotación
+        df_pur["_fecha"] = pd.to_datetime(df_pur.get("date"), unit="s", errors="coerce")
+        df_pur["_ym"] = df_pur["_fecha"].dt.to_period("M").astype(str)
+        df_comp = df_pur.groupby("_ym").apply(lambda g: pd.Series({"categoria": "Otros gastos de explotación", "importe": -abs(pd.to_numeric(g.get("total"), errors="coerce").fillna(0).sum())})).reset_index().rename(columns={"_ym":"🗓️ Año-Mes"})
+
+    # 3) (Opcional) Libro diario para afinar categorías (personal, financieros, etc.)
+    ledger_rows = []
+    if usar_libro:
+        asientos = list_daily_ledger(inicio_pl, fin_pl)
+        for a in asientos:
+            fecha = a.get("date") or a.get("ts")
+            fecha = pd.to_datetime(fecha, errors="coerce")
+            ym = fecha.to_period("M").astype(str) if pd.notna(fecha) else None
+            # campos comunes: accountCode/account/name y amounts (debit/credit/amount)
+            acct_code = str(a.get("accountCode") or a.get("account") or "")
+            acct_name = str(a.get("accountName") or "")
+            # importe: intentamos 'amount' y si no, debit - credit
+            amt = a.get("amount", None)
+            if amt is None:
+                debit = a.get("debit", 0) or 0
+                credit = a.get("credit", 0) or 0
+                amt = float(debit) - float(credit)
+            cat = classify_account(acct_code, acct_name)
+            if ym:
+                ledger_rows.append({"🗓️ Año-Mes": ym, "categoria": cat, "importe": float(amt)})
+    df_ledger = pd.DataFrame(ledger_rows)
+
+    # 4) Agregación por KPI P&L
+    # Base: Ingresos desde facturas + gastos desde compras (si activamos libro, lo usamos para refinar y sumar también financieros y personal)
+    # Empezamos con facturación:
+    base = ingresos_mes.rename(columns={"_ym":"🗓️ Año-Mes"}).copy()
+    # Gastos (compras por categoría)
+    comp_piv = df_comp.groupby(["🗓️ Año-Mes","categoria"])["importe"].sum().unstack(fill_value=0).reset_index()
+    for col in ["Aprovisionamientos","Gastos de personal","Otros gastos de explotación","Ingresos financieros","Gastos financieros","Diferencias de cambio","Otros resultados"]:
+        if col not in comp_piv.columns:
+            comp_piv[col] = 0.0
+    df_pl = base.merge(comp_piv, on="🗓️ Año-Mes", how="outer").fillna(0)
+
+    # Si hay libro diario, sumamos/sobrescribimos por categoría (prioridad contable)
+    if not df_ledger.empty:
+        add = df_ledger.groupby(["🗓️ Año-Mes","categoria"])["importe"].sum().unstack(fill_value=0).reset_index()
+        for col in add.columns:
+            if col != "🗓️ Año-Mes":
+                # sumamos (libro puede incluir nóminas, financieros, dif. de cambio que no estarán en compras)
+                df_pl[col] = df_pl.get(col, 0) + add[col]
+
+    # KPIs derivados
+    for c in ["Ingresos","Aprovisionamientos","Gastos de personal","Otros gastos de explotación","Ingresos financieros","Gastos financieros","Diferencias de cambio","Otros resultados"]:
+        if c not in df_pl.columns:
+            df_pl[c] = 0.0
+
+    df_pl["Margen Bruto"] = df_pl["Ingresos"] + df_pl["Aprovisionamientos"]  # compras negativas
+    df_pl["EBITDA aprox"] = df_pl["Margen Bruto"] + df_pl["Gastos de personal"] + df_pl["Otros gastos de explotación"]
+    df_pl["Resultado antes de finanzas"] = df_pl["EBITDA aprox"] + df_pl["Otros resultados"]
+    df_pl["Resultado neto aprox"] = (df_pl["Resultado antes de finanzas"]
+                                     + df_pl["Ingresos financieros"]
+                                     + df_pl["Gastos financieros"]
+                                     + df_pl["Diferencias de cambio"])
+
+    df_pl = df_pl.sort_values("🗓️ Año-Mes")
+    st.subheader("KPIs P&L")
+    tot = df_pl.select_dtypes(include=[float,int]).sum(numeric_only=True)
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Ingresos", f"${tot['Ingresos']:,.2f}")
+    col2.metric("Margen Bruto", f"${tot['Margen Bruto']:,.2f}")
+    col3.metric("EBITDA aprox", f"${tot['EBITDA aprox']:,.2f}")
+    col4.metric("Resultado neto aprox", f"${tot['Resultado neto aprox']:,.2f}")
+
+    st.subheader("Detalle por mes")
+    mostrar_cols = ["🗓️ Año-Mes","Ingresos","Aprovisionamientos","Gastos de personal","Otros gastos de explotación",
+                    "Margen Bruto","EBITDA aprox","Otros resultados","Ingresos financieros","Gastos financieros",
+                    "Diferencias de cambio","Resultado antes de finanzas","Resultado neto aprox"]
+    st.dataframe(df_pl[mostrar_cols], use_container_width=True)
+
+    st.subheader("Evolución")
+    import altair as alt
+    evo = df_pl.melt(id_vars=["🗓️ Año-Mes"], value_vars=["Ingresos","Margen Bruto","EBITDA aprox","Resultado neto aprox"],
+                     var_name="KPI", value_name="Valor")
+    chart = (alt.Chart(evo)
+                .mark_line(point=True)
+                .encode(x="🗓️ Año-Mes:O", y="Valor:Q", color="KPI:N", tooltip=["🗓️ Año-Mes","KPI","Valor:Q"])
+                .properties(height=320))
+    st.altair_chart(chart, use_container_width=True)
 
 
