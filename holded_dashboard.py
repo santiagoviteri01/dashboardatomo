@@ -307,7 +307,7 @@ with tab1:
     ax.set_xlabel("🗓️ Año-Mes")
     ax.grid(True)
     st.pyplot(fig)
-    
+
 with tab2:
     st.header("📊 Métricas de la Plataforma de Juego")
 
@@ -666,7 +666,8 @@ with tab2:
             st.table(df_top20.set_index("user_id").round(2))
         else:
             st.info("⚠️ No hay datos para ese KPI en el periodo seleccionado.")
-# ====== TAB 2: Métricas de la Plataforma de Juego ======
+    
+
 
 # ====== TAB 3: P&L desde Holded ======
 with tab3:
