@@ -308,6 +308,7 @@ with tab1:
     ax.grid(True)
     st.pyplot(fig)
 
+# ====== TAB 2: Métricas de la Plataforma de Juego ======
 with tab2:
     st.header("📊 Métricas de la Plataforma de Juego")
 
@@ -317,7 +318,8 @@ with tab2:
             conn = mysql.connector.connect(
                 host=st.secrets["db"]["host"],
                 user=st.secrets["db"]["user"],
-                password=st.secrets["db"]["password"]
+                password=st.secrets["db"]["password"],
+                database=st.secrets["db"].get("database", "")
             )
             cursor = conn.cursor()
             cursor.execute(sql)
@@ -329,6 +331,22 @@ with tab2:
         except mysql.connector.Error as e:
             st.error(f"❌ Error de conexión: {e}")
             return pd.DataFrame()
+        except Exception as e:
+            st.error(f"❌ Error inesperado: {e}")
+            return pd.DataFrame()
+
+    # -- Función de validación de fechas --
+    def validate_dates(fechas):
+        if isinstance(fechas, (tuple, list)) and len(fechas) == 2:
+            start_date, end_date = fechas
+        else:
+            start_date = end_date = fechas
+        
+        if start_date > end_date:
+            st.error("⚠️ La fecha inicial no puede ser posterior a la final.")
+            st.stop()
+        
+        return start_date, end_date
 
     # -- Inicializar estado --
     if "filtros_ok" not in st.session_state:
@@ -346,444 +364,1036 @@ with tab2:
             max_value=today,
             key="fecha_tab2"
         )
-        # Desempaquetar
-        if isinstance(fechas, (tuple, list)) and len(fechas) == 2:
-            sd, ed = fechas
-        else:
-            sd = ed = fechas
-        if ed < sd:
-            st.error("⚠️ La fecha final debe ser igual o posterior a la inicial.")
+        
+        # Validar y desempaquetar fechas
+        start_date, end_date = validate_dates(fechas)
 
+        # Selector de clientes
         clientes_df = consultar("SELECT DISTINCT user_id FROM plasma_core.users ORDER BY user_id")
-        opciones_cliente = ["Todos"] + clientes_df["user_id"].astype(str).tolist()
+        opciones_cliente = ["Todos"]
+        if not clientes_df.empty:
+            opciones_cliente.extend(clientes_df["user_id"].astype(str).tolist())
+        
         cliente_sel = st.selectbox(
             "🧍‍♂️ Selecciona Cliente",
             opciones_cliente,
-            index=opciones_cliente.index(st.session_state.get("cliente", "Todos"))
+            index=0 if "cliente" not in st.session_state else opciones_cliente.index(st.session_state.get("cliente", "Todos"))
         )
 
         filtros_btn = st.form_submit_button("🔄 Actualizar")
+        
         if filtros_btn:
-            st.session_state["fechas"] = (sd, ed)
+            st.session_state["fechas"] = (start_date, end_date)
             st.session_state["cliente"] = cliente_sel
             st.session_state["filtros_ok"] = True
-            # reset Top20 cuando cambian filtros
             st.session_state["top20_ok"] = False
 
-    # -- Si no enviaron filtros aún, no hacemos nada más --
+    # -- Si no enviaron filtros aún, mostrar mensaje --
     if not st.session_state["filtros_ok"]:
+        st.info("📋 Selecciona fechas y pulsa **Actualizar** para ver métricas.")
         st.stop()
 
-    # -- Calcular df_range y mostrar métricas y gráficos --
+    # -- Procesar métricas --
     start_date, end_date = st.session_state["fechas"]
     cliente = st.session_state["cliente"]
 
+    # Construir filtros SQL
     filtro_altas = "" if cliente == "Todos" else f"AND user_id = '{cliente}'"
-    filtro_dep   = filtro_altas
-    filtro_jug   = "" if cliente == "Todos" else f"AND s.user_id = '{cliente}'"
-    filtro_ggr   = "" if cliente == "Todos" else f"AND session_id IN (SELECT session_id FROM plasma_games.sessions WHERE user_id = '{cliente}')"
+    filtro_dep = filtro_altas
+    filtro_jug = "" if cliente == "Todos" else f"AND s.user_id = '{cliente}'"
+    filtro_ggr = "" if cliente == "Todos" else f"AND session_id IN (SELECT session_id FROM plasma_games.sessions WHERE user_id = '{cliente}')"
 
-    # Construcción de df_range
-    if start_date == end_date:
-        fecha_str = start_date.strftime("%Y-%m-%d")
-        df_altas = consultar(f"""
-            SELECT COUNT(*) AS nuevas_altas
-            FROM plasma_core.users
-            WHERE ts_creation BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59' {filtro_altas}
-        """)
-        df_depos = consultar(f"""
-            SELECT COUNT(*) AS total_transacciones,
-                   AVG(amount) AS promedio_amount,
-                   SUM(amount) AS total_amount
-            FROM (
-              SELECT amount, user_id
-                FROM plasma_payments.nico_transactions
-               WHERE ts_commit BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59' {filtro_dep}
-              UNION ALL
-              SELECT amount, user_id
-                FROM plasma_payments.payphone_transactions
-               WHERE ts_commit BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59' {filtro_dep}
-            ) t
-        """)
-        df_jug = consultar(f"""
-            SELECT COUNT(DISTINCT re.session_id) AS jugadores,
-                   AVG(re.amount)               AS importe_medio
-            FROM plasma_games.rounds_entries re
-            JOIN plasma_games.sessions s ON re.session_id = s.session_id
-            WHERE re.ts BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59'
-              AND re.`type`='BET' {filtro_jug}
-        """)
-        df_ggr = consultar(f"""
-            SELECT SUM(CASE WHEN `type`='BET' THEN amount ELSE 0 END) AS total_bet,
-                   SUM(CASE WHEN `type`='WIN' THEN amount ELSE 0 END) AS total_win,
-                   SUM(CASE WHEN `type`='BET' THEN amount ELSE 0 END)
-                   - SUM(CASE WHEN `type`='WIN' THEN amount ELSE 0 END) AS ggr
-            FROM plasma_games.rounds_entries
-            WHERE ts BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59' {filtro_ggr}
-        """)
-        df_range = pd.DataFrame({
-            "nuevas_altas":        [df_altas.iloc[0, 0]],
-            "total_transacciones": [df_depos.iloc[0]["total_transacciones"]],
-            "promedio_amount":     [df_depos.iloc[0]["promedio_amount"] or 0],
-            "total_amount":        [df_depos.iloc[0]["total_amount"] or 0],
-            "jugadores":           [df_jug.iloc[0]["jugadores"]],
-            "importe_medio":       [df_jug.iloc[0]["importe_medio"] or 0],
-            "total_bet":           [df_ggr.iloc[0]["total_bet"]],
-            "total_win":           [df_ggr.iloc[0]["total_win"]],
-            "ggr":                 [df_ggr.iloc[0]["ggr"]],
-        }, index=[fecha_str])
-    else:
-        start_str = start_date.strftime("%Y-%m-%d")
-        end_str   = end_date.strftime("%Y-%m-%d")
-        df_altas = consultar(f"""
-            SELECT DATE(ts_creation) AS fecha, COUNT(*) AS nuevas_altas
-            FROM plasma_core.users
-            WHERE ts_creation BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro_altas}
-            GROUP BY fecha ORDER BY fecha
-        """)
-        df_depos = consultar(f"""
-            SELECT DATE(ts_commit) AS fecha,
-                   COUNT(*)            AS total_transacciones,
-                   AVG(amount)         AS promedio_amount,
-                   SUM(amount)         AS total_amount
-            FROM (
-              SELECT ts_commit, amount
-                FROM plasma_payments.nico_transactions
-               WHERE ts_commit BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro_dep}
-              UNION ALL
-              SELECT ts_commit, amount
-                FROM plasma_payments.payphone_transactions
-               WHERE ts_commit BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro_dep}
-            ) t
-            GROUP BY fecha ORDER BY fecha
-        """)
-        df_jug = consultar(f"""
-            SELECT DATE(re.ts)            AS fecha,
-                   COUNT(DISTINCT re.session_id) AS jugadores,
-                   AVG(re.amount)               AS importe_medio
-            FROM plasma_games.rounds_entries re
-            JOIN plasma_games.sessions s ON re.session_id = s.session_id
-            WHERE re.ts BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59'
-              AND re.`type`='BET' {filtro_jug}
-            GROUP BY fecha ORDER BY fecha
-        """)
-        df_ggr = consultar(f"""
-            SELECT DATE(re.ts) AS fecha,
-                   SUM(CASE WHEN re.`type`='BET' THEN re.amount ELSE 0 END) AS total_bet,
-                   SUM(CASE WHEN re.`type`='WIN' THEN re.amount ELSE 0 END) AS total_win,
-                   SUM(CASE WHEN re.`type`='BET' THEN re.amount ELSE 0 END)
-                   - SUM(CASE WHEN re.`type`='WIN' THEN re.amount ELSE 0 END) AS ggr
-            FROM plasma_games.rounds_entries re
-            WHERE re.ts BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro_ggr}
-            GROUP BY fecha ORDER BY fecha
-        """)
-        date_index = pd.date_range(start_str, end_str, freq="D")
-        for df_tmp in (df_altas, df_depos, df_jug, df_ggr):
-            df_tmp["fecha"] = pd.to_datetime(df_tmp["fecha"])
-        df_range = pd.DataFrame(index=date_index)
-        df_range = df_range.join(df_altas.set_index("fecha"))
-        df_range = df_range.join(df_depos.set_index("fecha"))
-        df_range = df_range.join(df_jug.set_index("fecha"))
-        df_range = df_range.join(df_ggr.set_index("fecha")).fillna(0)
+    try:
+        if start_date == end_date:
+            # Consulta para un solo día
+            fecha_str = start_date.strftime("%Y-%m-%d")
+            
+            df_altas = consultar(f"""
+                SELECT COUNT(*) AS nuevas_altas
+                FROM plasma_core.users
+                WHERE ts_creation BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59' {filtro_altas}
+            """)
+            
+            df_depos = consultar(f"""
+                SELECT COUNT(*) AS total_transacciones,
+                       COALESCE(AVG(amount), 0) AS promedio_amount,
+                       COALESCE(SUM(amount), 0) AS total_amount
+                FROM (
+                    SELECT amount, user_id
+                    FROM plasma_payments.nico_transactions
+                    WHERE ts_commit BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59' {filtro_dep}
+                    UNION ALL
+                    SELECT amount, user_id
+                    FROM plasma_payments.payphone_transactions
+                    WHERE ts_commit BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59' {filtro_dep}
+                ) t
+            """)
+            
+            df_jug = consultar(f"""
+                SELECT COUNT(DISTINCT re.session_id) AS jugadores,
+                       COALESCE(AVG(re.amount), 0) AS importe_medio
+                FROM plasma_games.rounds_entries re
+                JOIN plasma_games.sessions s ON re.session_id = s.session_id
+                WHERE re.ts BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59'
+                  AND re.`type`='BET' {filtro_jug}
+            """)
+            
+            df_ggr = consultar(f"""
+                SELECT COALESCE(SUM(CASE WHEN `type`='BET' THEN amount ELSE 0 END), 0) AS total_bet,
+                       COALESCE(SUM(CASE WHEN `type`='WIN' THEN amount ELSE 0 END), 0) AS total_win,
+                       COALESCE(SUM(CASE WHEN `type`='BET' THEN amount ELSE 0 END) - 
+                                SUM(CASE WHEN `type`='WIN' THEN amount ELSE 0 END), 0) AS ggr
+                FROM plasma_games.rounds_entries
+                WHERE ts BETWEEN '{fecha_str} 00:00:00' AND '{fecha_str} 23:59:59' {filtro_ggr}
+            """)
+            
+            # Crear DataFrame para un solo día
+            df_range = pd.DataFrame({
+                "nuevas_altas": [df_altas.iloc[0, 0] if not df_altas.empty else 0],
+                "total_transacciones": [df_depos.iloc[0]["total_transacciones"] if not df_depos.empty else 0],
+                "promedio_amount": [df_depos.iloc[0]["promedio_amount"] if not df_depos.empty else 0],
+                "total_amount": [df_depos.iloc[0]["total_amount"] if not df_depos.empty else 0],
+                "jugadores": [df_jug.iloc[0]["jugadores"] if not df_jug.empty else 0],
+                "importe_medio": [df_jug.iloc[0]["importe_medio"] if not df_jug.empty else 0],
+                "total_bet": [df_ggr.iloc[0]["total_bet"] if not df_ggr.empty else 0],
+                "total_win": [df_ggr.iloc[0]["total_win"] if not df_ggr.empty else 0],
+                "ggr": [df_ggr.iloc[0]["ggr"] if not df_ggr.empty else 0],
+            }, index=[fecha_str])
+            
+        else:
+            # Consulta para rango de fechas
+            start_str = start_date.strftime("%Y-%m-%d")
+            end_str = end_date.strftime("%Y-%m-%d")
+            
+            df_altas = consultar(f"""
+                SELECT DATE(ts_creation) AS fecha, COUNT(*) AS nuevas_altas
+                FROM plasma_core.users
+                WHERE ts_creation BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro_altas}
+                GROUP BY fecha ORDER BY fecha
+            """)
+            
+            df_depos = consultar(f"""
+                SELECT DATE(ts_commit) AS fecha,
+                       COUNT(*) AS total_transacciones,
+                       COALESCE(AVG(amount), 0) AS promedio_amount,
+                       COALESCE(SUM(amount), 0) AS total_amount
+                FROM (
+                    SELECT ts_commit, amount
+                    FROM plasma_payments.nico_transactions
+                    WHERE ts_commit BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro_dep}
+                    UNION ALL
+                    SELECT ts_commit, amount
+                    FROM plasma_payments.payphone_transactions
+                    WHERE ts_commit BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro_dep}
+                ) t
+                GROUP BY fecha ORDER BY fecha
+            """)
+            
+            df_jug = consultar(f"""
+                SELECT DATE(re.ts) AS fecha,
+                       COUNT(DISTINCT re.session_id) AS jugadores,
+                       COALESCE(AVG(re.amount), 0) AS importe_medio
+                FROM plasma_games.rounds_entries re
+                JOIN plasma_games.sessions s ON re.session_id = s.session_id
+                WHERE re.ts BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59'
+                  AND re.`type`='BET' {filtro_jug}
+                GROUP BY fecha ORDER BY fecha
+            """)
+            
+            df_ggr = consultar(f"""
+                SELECT DATE(re.ts) AS fecha,
+                       COALESCE(SUM(CASE WHEN re.`type`='BET' THEN re.amount ELSE 0 END), 0) AS total_bet,
+                       COALESCE(SUM(CASE WHEN re.`type`='WIN' THEN re.amount ELSE 0 END), 0) AS total_win,
+                       COALESCE(SUM(CASE WHEN re.`type`='BET' THEN re.amount ELSE 0 END) - 
+                                SUM(CASE WHEN re.`type`='WIN' THEN re.amount ELSE 0 END), 0) AS ggr
+                FROM plasma_games.rounds_entries re
+                WHERE re.ts BETWEEN '{start_str} 00:00:00' AND '{end_str} 23:59:59' {filtro_ggr}
+                GROUP BY fecha ORDER BY fecha
+            """)
+            
+            # Crear rango completo de fechas
+            date_index = pd.date_range(start_str, end_str, freq="D")
+            df_range = pd.DataFrame(index=date_index)
+            
+            # Convertir fechas y hacer join
+            for df_tmp in [df_altas, df_depos, df_jug, df_ggr]:
+                if not df_tmp.empty:
+                    df_tmp["fecha"] = pd.to_datetime(df_tmp["fecha"])
+            
+            if not df_altas.empty:
+                df_range = df_range.join(df_altas.set_index("fecha"))
+            if not df_depos.empty:
+                df_range = df_range.join(df_depos.set_index("fecha"))
+            if not df_jug.empty:
+                df_range = df_range.join(df_jug.set_index("fecha"))
+            if not df_ggr.empty:
+                df_range = df_range.join(df_ggr.set_index("fecha"))
+            
+            df_range = df_range.fillna(0)
 
-    # Guardar en sesión
-    st.session_state["df_range"] = df_range
+        # Guardar en sesión
+        st.session_state["df_range"] = df_range
 
-    # Mostrar métricas / gráficos
-    for col in df_range.columns:
-        title = col.replace("_", " ").title()
-        st.subheader(title)
-        df_plot = df_range[[col]].reset_index().rename(columns={"index": "Fecha", col: title})
-        chart = (
-            alt.Chart(df_plot)
-               .mark_line(point=True)
-               .encode(x="Fecha:T", y=alt.Y(f"{title}:Q", title=title))
-               .properties(width=600, height=300)
-        )
-        st.altair_chart(chart, use_container_width=True)
+        # Mostrar KPIs resumidos
+        st.subheader("📈 Resumen del Período")
+        col1, col2, col3, col4 = st.columns(4)
+        
+        total_altas = df_range["nuevas_altas"].sum()
+        total_depositos = df_range["total_amount"].sum()
+        total_jugadores = df_range["jugadores"].sum()
+        total_ggr = df_range["ggr"].sum()
+        
+        col1.metric("Total Nuevas Altas", f"{total_altas:,.0f}")
+        col2.metric("Total Depósitos", f"${total_depositos:,.2f}")
+        col3.metric("Total Jugadores", f"{total_jugadores:,.0f}")
+        col4.metric("GGR Total", f"${total_ggr:,.2f}")
 
-    # 1) Mapa de KPIs (defínelo antes del form)
+        # Mostrar gráficos por métrica
+        st.subheader("📊 Evolución por Métrica")
+        
+        metrics_config = {
+            "nuevas_altas": "👥 Nuevas Altas",
+            "total_transacciones": "💳 Transacciones",
+            "total_amount": "💰 Monto Total Depósitos",
+            "promedio_amount": "💵 Promedio por Depósito",
+            "jugadores": "🎮 Jugadores Únicos",
+            "importe_medio": "💸 Importe Medio Jugado",
+            "total_bet": "🎯 Total Apostado",
+            "total_win": "🏆 Total Ganado",
+            "ggr": "📊 GGR"
+        }
+        
+        for col_name, display_name in metrics_config.items():
+            if col_name in df_range.columns:
+                st.subheader(display_name)
+                df_plot = df_range[[col_name]].reset_index().rename(columns={"index": "Fecha", col_name: display_name})
+                
+                chart = (
+                    alt.Chart(df_plot)
+                    .mark_line(point=True, strokeWidth=2)
+                    .encode(
+                        x=alt.X("Fecha:T", title="Fecha"),
+                        y=alt.Y(f"{display_name}:Q", title=display_name),
+                        tooltip=["Fecha:T", f"{display_name}:Q"]
+                    )
+                    .properties(width=600, height=300)
+                )
+                st.altair_chart(chart, use_container_width=True)
+
+    except Exception as e:
+        st.error(f"❌ Error al procesar métricas: {e}")
+        st.stop()
+
+    # ====== SECCIÓN TOP 20 ======
+    st.markdown("---")
+    st.header("🏆 Top 20 Clientes por KPI")
+
+    # Mapa de KPIs
     kpi_map = {
-        '👥 Nuevas Altas': (
-            "COUNT(*)",
-            "plasma_core.users u",
-            "ts_creation",
-            None  # se rellenará dinámicamente con el WHERE
-        ),
-        '💰 Depósitos (Transacciones)': (
-            "COUNT(*)",
-            "(SELECT user_id, ts_commit FROM plasma_payments.nico_transactions WHERE 1=1 "
-            "UNION ALL "
-            "SELECT user_id, ts_commit FROM plasma_payments.payphone_transactions WHERE 1=1) t",
-            "ts_commit",
-            None
-        ),
-        '💵 Importe Medio Depósitos': (
-            "AVG(amount)",
-            "(SELECT user_id, amount, ts_commit FROM plasma_payments.nico_transactions WHERE 1=1 "
-            "UNION ALL "
-            "SELECT user_id, amount, ts_commit FROM plasma_payments.payphone_transactions WHERE 1=1) t",
-            "ts_commit",
-            None
-        ),
-        '💳 Valor Total Depósitos': (
-            "SUM(amount)",
-            "(SELECT user_id, amount, ts_commit FROM plasma_payments.nico_transactions WHERE 1=1 "
-            "UNION ALL "
-            "SELECT user_id, amount, ts_commit FROM plasma_payments.payphone_transactions WHERE 1=1) t",
-            "ts_commit",
-            None
-        ),
-        '🎮 Jugadores': (
-            "COUNT(DISTINCT re.session_id)",
-            "plasma_games.rounds_entries re "
-            "JOIN plasma_games.sessions s ON re.session_id = s.session_id",
-            "ts",
-            None
-        ),
-        '💸 Importe Medio Jugado': (
-            "AVG(re.amount)",
-            "plasma_games.rounds_entries re "
-            "JOIN plasma_games.sessions s ON re.session_id = s.session_id",
-            "ts",
-            None
-        ),
-        '🎯 Total BET': (
-            "SUM(CASE WHEN re.`type`='BET' THEN re.amount ELSE 0 END)",
-            "plasma_games.rounds_entries re "
-            "JOIN plasma_games.sessions s ON re.session_id = s.session_id",
-            "ts",
-            None
-        ),
-        '🎯 Total WIN': (
-            "SUM(CASE WHEN re.`type`='WIN' THEN re.amount ELSE 0 END)",
-            "plasma_games.rounds_entries re "
-            "JOIN plasma_games.sessions s ON re.session_id = s.session_id",
-            "ts",
-            None
-        ),
-        '📊 GGR': (
-            "SUM(CASE WHEN re.`type`='BET' THEN re.amount ELSE 0 END) - "
-            "SUM(CASE WHEN re.`type`='WIN' THEN re.amount ELSE 0 END)",
-            "plasma_games.rounds_entries re "
-            "JOIN plasma_games.sessions s ON re.session_id = s.session_id",
-            "ts",
-            None
-        ),
+        '👥 Nuevas Altas': {
+            'agg': "COUNT(*)",
+            'from_clause': "plasma_core.users u",
+            'ts_col': "ts_creation",
+            'alias': 'u'
+        },
+        '💰 Depósitos (Transacciones)': {
+            'agg': "COUNT(*)",
+            'from_clause': "transactions_union",
+            'ts_col': "ts_commit",
+            'alias': 't',
+            'union': True
+        },
+        '💵 Importe Medio Depósitos': {
+            'agg': "AVG(amount)",
+            'from_clause': "transactions_union",
+            'ts_col': "ts_commit",
+            'alias': 't',
+            'union': True
+        },
+        '💳 Valor Total Depósitos': {
+            'agg': "SUM(amount)",
+            'from_clause': "transactions_union",
+            'ts_col': "ts_commit",
+            'alias': 't',
+            'union': True
+        },
+        '🎮 Jugadores Únicos': {
+            'agg': "COUNT(DISTINCT re.session_id)",
+            'from_clause': "plasma_games.rounds_entries re JOIN plasma_games.sessions s ON re.session_id = s.session_id",
+            'ts_col': "re.ts",
+            'alias': 're',
+            'extra_where': "AND re.`type`='BET'"
+        },
+        '💸 Importe Medio Jugado': {
+            'agg': "AVG(re.amount)",
+            'from_clause': "plasma_games.rounds_entries re JOIN plasma_games.sessions s ON re.session_id = s.session_id",
+            'ts_col': "re.ts",
+            'alias': 're',
+            'extra_where': "AND re.`type`='BET'"
+        },
+        '🎯 Total Apostado': {
+            'agg': "SUM(CASE WHEN re.`type`='BET' THEN re.amount ELSE 0 END)",
+            'from_clause': "plasma_games.rounds_entries re JOIN plasma_games.sessions s ON re.session_id = s.session_id",
+            'ts_col': "re.ts",
+            'alias': 're'
+        },
+        '🎯 Total Ganado': {
+            'agg': "SUM(CASE WHEN re.`type`='WIN' THEN re.amount ELSE 0 END)",
+            'from_clause': "plasma_games.rounds_entries re JOIN plasma_games.sessions s ON re.session_id = s.session_id",
+            'ts_col': "re.ts",
+            'alias': 're'
+        },
+        '📊 GGR': {
+            'agg': "SUM(CASE WHEN re.`type`='BET' THEN re.amount ELSE 0 END) - SUM(CASE WHEN re.`type`='WIN' THEN re.amount ELSE 0 END)",
+            'from_clause': "plasma_games.rounds_entries re JOIN plasma_games.sessions s ON re.session_id = s.session_id",
+            'ts_col': "re.ts",
+            'alias': 're'
+        }
     }
 
-    # 3) Formulario Top 20
-    #
-    st.markdown("---")
-    st.header("🔎 Top 20 Clientes por KPI")
-    
     with st.form("top20"):
-        # 1) Calendario acotado al rango original
+        # Selector de fecha acotado al rango original
         fechas_detalle = st.date_input(
-            "🗓 Selecciona fecha o rango para detalle",
+            "🗓 Selecciona fecha o rango para Top 20",
             value=st.session_state["fechas"],
             min_value=st.session_state["fechas"][0],
             max_value=st.session_state["fechas"][1],
             key="fechas_detalle"
         )
-        if isinstance(fechas_detalle, (tuple, list)) and len(fechas_detalle) == 2:
-            sub_start, sub_end = fechas_detalle
-        else:
-            sub_start = sub_end = fechas_detalle
-    
-        # 2) Selector de KPI
+        
+        sub_start, sub_end = validate_dates(fechas_detalle)
+        
+        # Selector de KPI
         kpi_sel = st.selectbox(
-            "📊 Selecciona KPI",
+            "📊 Selecciona KPI para Top 20",
             list(kpi_map.keys()),
             key="det_kpi"
         )
-    
-        # 3) **ESTE** debe ir **dentro** del with y al final
-        top20_btn = st.form_submit_button("Mostrar Top 20")
-    
-    # — Fuera del form, reaccionamos al submit —
+        
+        top20_btn = st.form_submit_button("🚀 Mostrar Top 20")
+
+    # Procesar Top 20
     if top20_btn:
-        sub_start_str = sub_start.strftime("%Y-%m-%d")
-        sub_end_str   = sub_end.strftime("%Y-%m-%d")
-    
-        # Desempaquetar definición de KPI
-        agg, from_clause, ts_col, _ = kpi_map[kpi_sel]
-        if "plasma_core.users" in from_clause:
-            alias = "u"
-        elif "nico_transactions" in from_clause or "payphone_transactions" in from_clause:
-            alias = "t"
-        else:
-            # Para todas las métricas de rounds_entries
-            alias = "re"
-    
-        # Construir cláusula WHERE con alias correcto
-        where_clause = (
-            f"{alias}.{ts_col} BETWEEN "
-            f"'{sub_start_str} 00:00:00' AND '{sub_end_str} 23:59:59'"
-        )
-    
-        # Generar SQL según origen
-        if "plasma_core.users" in from_clause:
-            sql = f"""
-                SELECT {alias}.user_id AS user_id,
-                       {agg}           AS valor
-                  FROM {from_clause}
-                 WHERE {where_clause}
-                 GROUP BY {alias}.user_id
-                 ORDER BY valor DESC
-                 LIMIT 20
-            """
-        elif "nico_transactions" in from_clause or "payphone_transactions" in from_clause:
-            sql = f"""
-                SELECT t.user_id, {agg} AS valor
-                  FROM (
+        try:
+            sub_start_str = sub_start.strftime("%Y-%m-%d")
+            sub_end_str = sub_end.strftime("%Y-%m-%d")
+            
+            kpi_config = kpi_map[kpi_sel]
+            agg = kpi_config['agg']
+            from_clause = kpi_config['from_clause']
+            ts_col = kpi_config['ts_col']
+            alias = kpi_config['alias']
+            
+            # Construir WHERE clause
+            where_clause = f"{ts_col} BETWEEN '{sub_start_str} 00:00:00' AND '{sub_end_str} 23:59:59'"
+            if 'extra_where' in kpi_config:
+                where_clause += f" {kpi_config['extra_where']}"
+            
+            # Generar SQL según tipo
+            if kpi_config.get('union'):
+                # Para transacciones con UNION
+                sql = f"""
+                    SELECT t.user_id, {agg} AS valor
+                    FROM (
                         SELECT user_id, amount, ts_commit
-                          FROM plasma_payments.nico_transactions
-                         WHERE {where_clause}
+                        FROM plasma_payments.nico_transactions
+                        WHERE {where_clause.replace('ts_commit', 'ts_commit')}
                         UNION ALL
                         SELECT user_id, amount, ts_commit
-                          FROM plasma_payments.payphone_transactions
-                         WHERE {where_clause}
-                       ) AS t
-                 GROUP BY t.user_id
-                 ORDER BY valor DESC
-                 LIMIT 20
-            """
-        else:
-            # rounds_entries
-            sql = f"""
-                SELECT s.user_id, {agg} AS valor
-                  FROM {from_clause}
-                 WHERE {where_clause}
-                 GROUP BY s.user_id
-                 ORDER BY valor DESC
-                 LIMIT 20
-            """
-    
-        # Ejecutar y mostrar
-        df_top20 = consultar(sql)
-        if not df_top20.empty:
-            st.table(df_top20.set_index("user_id").round(2))
-        else:
-            st.info("⚠️ No hay datos para ese KPI en el periodo seleccionado.")
-# ====== UI del Tab 3: P&L desde Holded ======
+                        FROM plasma_payments.payphone_transactions
+                        WHERE {where_clause.replace('ts_commit', 'ts_commit')}
+                    ) AS t
+                    GROUP BY t.user_id
+                    HAVING valor > 0
+                    ORDER BY valor DESC
+                    LIMIT 20
+                """
+            elif 'plasma_core.users' in from_clause:
+                # Para usuarios
+                sql = f"""
+                    SELECT u.user_id, {agg} AS valor
+                    FROM {from_clause}
+                    WHERE {where_clause}
+                    GROUP BY u.user_id
+                    HAVING valor > 0
+                    ORDER BY valor DESC
+                    LIMIT 20
+                """
+            else:
+                # Para rounds_entries
+                sql = f"""
+                    SELECT s.user_id, {agg} AS valor
+                    FROM {from_clause}
+                    WHERE {where_clause}
+                    GROUP BY s.user_id
+                    HAVING valor > 0
+                    ORDER BY valor DESC
+                    LIMIT 20
+                """
+            
+            df_top20 = consultar(sql)
+            
+            if not df_top20.empty:
+                st.subheader(f"🏆 Top 20: {kpi_sel}")
+                
+                # Mostrar tabla
+                df_display = df_top20.copy()
+                df_display['valor'] = df_display['valor'].round(2)
+                df_display['Ranking'] = range(1, len(df_display) + 1)
+                df_display = df_display[['Ranking', 'user_id', 'valor']].rename(columns={
+                    'user_id': 'Cliente',
+                    'valor': 'Valor'
+                })
+                
+                st.dataframe(df_display, use_container_width=True)
+                
+                # Gráfico de barras
+                chart_data = df_top20.head(10)  # Top 10 para mejor visualización
+                chart = (
+                    alt.Chart(chart_data)
+                    .mark_bar()
+                    .encode(
+                        x=alt.X('valor:Q', title='Valor'),
+                        y=alt.Y('user_id:O', sort='-x', title='Cliente'),
+                        color=alt.Color('valor:Q', scale=alt.Scale(scheme='viridis')),
+                        tooltip=['user_id:O', 'valor:Q']
+                    )
+                    .properties(height=400, title=f"Top 10 - {kpi_sel}")
+                )
+                st.altair_chart(chart, use_container_width=True)
+                
+            else:
+                st.info("⚠️ No hay datos para ese KPI en el período seleccionado.")
+                
+        except Exception as e:
+            st.error(f"❌ Error al generar Top 20: {e}")
+
+# ====== TAB 3: P&L desde Holded ======
 with tab3:
-    st.header("📑 P&L Holded (API)")
-    st.caption("Calculado desde documentos de Holded y (opcional) libro diario contable para mayor precisión.")
+    st.header("📑 P&L desde Holded (API)")
+    st.caption("Calculado desde documentos de Holded y libro diario contable para mayor precisión.")
 
-    # Rango de fechas (reutilizamos el sidebar del Tab 1 si quieres; aquí lo hacemos local)
-    colA, colB = st.columns(2)
+    # ====== FUNCIONES AUXILIARES PARA HOLDED API ======
+    
+    @st.cache_data(ttl=300)  # Cache por 5 minutos
+    def get_holded_token():
+        """Obtener token de autenticación de Holded"""
+        try:
+            api_key = st.secrets.get("holded", {}).get("api_key", "")
+            if not api_key:
+                st.error("❌ No se encontró la API key de Holded en secrets")
+                return None
+            return api_key
+        except Exception as e:
+            st.error(f"❌ Error obteniendo token: {e}")
+            return None
+
+    def make_holded_request(endpoint, params=None):
+        """Hacer petición a la API de Holded"""
+        token = get_holded_token()
+        if not token:
+            return None
+        
+        base_url = "https://api.holded.com/api"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+        
+        try:
+            response = requests.get(f"{base_url}/{endpoint}", headers=headers, params=params or {})
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            st.error(f"❌ Error en petición a Holded: {e}")
+            return None
+
+    def list_documents(doc_type, start_date, end_date):
+        """Listar documentos de Holded en un rango de fechas"""
+        try:
+            # Convertir fechas a timestamp
+            start_ts = int(start_date.timestamp())
+            end_ts = int(end_date.timestamp())
+            
+            params = {
+                "dateFrom": start_ts,
+                "dateTo": end_ts,
+                "limit": 100
+            }
+            
+            # Mapeo de tipos de documento
+            endpoint_map = {
+                "invoice": "invoicing/v1/documents/invoice",
+                "purchase": "invoicing/v1/documents/purchase"
+            }
+            
+            endpoint = endpoint_map.get(doc_type)
+            if not endpoint:
+                return pd.DataFrame()
+            
+            data = make_holded_request(endpoint, params)
+            if not data:
+                return pd.DataFrame()
+            
+            # Convertir a DataFrame
+            documents = data.get("data", []) if isinstance(data, dict) else data
+            return pd.DataFrame(documents)
+            
+        except Exception as e:
+            st.error(f"❌ Error listando documentos {doc_type}: {e}")
+            return pd.DataFrame()
+
+    def get_document_detail(doc_type, doc_id):
+        """Obtener detalle de un documento específico"""
+        if not doc_id:
+            return {}
+        
+        try:
+            endpoint_map = {
+                "invoice": f"invoicing/v1/documents/invoice/{doc_id}",
+                "purchase": f"invoicing/v1/documents/purchase/{doc_id}"
+            }
+            
+            endpoint = endpoint_map.get(doc_type)
+            if not endpoint:
+                return {}
+            
+            return make_holded_request(endpoint) or {}
+            
+        except Exception as e:
+            st.error(f"❌ Error obteniendo detalle de documento: {e}")
+            return {}
+
+    def parse_purchase_lines(purchase_detail):
+        """Extraer líneas de compra con cuentas contables"""
+        lines = []
+        try:
+            items = purchase_detail.get("items", [])
+            doc_date = purchase_detail.get("date")
+            
+            for item in items:
+                account_code = item.get("accountCode", "")
+                account_name = item.get("accountName", item.get("name", ""))
+                amount = float(item.get("total", 0) or item.get("subtotal", 0) or 0)
+                
+                # Los gastos van en negativo
+                amount = -abs(amount)
+                
+                lines.append((doc_date, account_code, account_name, amount))
+                
+        except Exception as e:
+            st.warning(f"⚠️ Error procesando líneas de compra: {e}")
+            
+        return lines
+
+    def list_daily_ledger(start_date, end_date):
+        """Obtener asientos del libro diario"""
+        try:
+            start_ts = int(start_date.timestamp())
+            end_ts = int(end_date.timestamp())
+            
+            params = {
+                "dateFrom": start_ts,
+                "dateTo": end_ts,
+                "limit": 500
+            }
+            
+            data = make_holded_request("accounting/v1/ledger", params)
+            if not data:
+                return []
+            
+            entries = data.get("data", []) if isinstance(data, dict) else data
+            return entries
+            
+        except Exception as e:
+            st.error(f"❌ Error obteniendo libro diario: {e}")
+            return []
+
+    def classify_account(account_code, account_name):
+        """Clasificar cuenta contable en categorías P&L"""
+        account_code = str(account_code).strip()
+        account_name = str(account_name).lower()
+        
+        # Mapeo por código de cuenta (Plan General Contable)
+        if account_code.startswith('7'):
+            return "Ingresos"
+        elif account_code.startswith('60'):
+            return "Aprovisionamientos"
+        elif account_code.startswith('64'):
+            return "Gastos de personal"
+        elif account_code.startswith('76'):
+            return "Ingresos financieros"
+        elif account_code.startswith('66') or account_code.startswith('67'):
+            return "Gastos financieros"
+        elif account_code.startswith('768') or account_code.startswith('668'):
+            return "Diferencias de cambio"
+        elif account_code.startswith('77') or account_code.startswith('67'):
+            return "Otros resultados"
+        elif account_code.startswith('6'):
+            return "Otros gastos de explotación"
+        
+        # Clasificación por nombre si no hay código
+        if any(word in account_name for word in ['nómina', 'sueldo', 'salario', 'personal', 'seguridad social']):
+            return "Gastos de personal"
+        elif any(word in account_name for word in ['interés', 'financiero', 'préstamo', 'crédito']):
+            return "Gastos financieros"
+        elif 'cambio' in account_name or 'divisa' in account_name:
+            return "Diferencias de cambio"
+        elif any(word in account_name for word in ['compra', 'suministro', 'materia prima']):
+            return "Aprovisionamientos"
+        
+        return "Otros gastos de explotación"
+
+    # ====== INTERFAZ DEL TAB 3 ======
+    
+    # Controles de fecha
+    col1, col2 = st.columns(2)
     hoy = datetime.today()
-    inicio_pl = colA.date_input("📅 Inicio", value=hoy.replace(day=1))
-    fin_pl    = colB.date_input("📅 Fin", value=hoy)
+    inicio_pl = col1.date_input(
+        "📅 Fecha Inicio P&L", 
+        value=hoy.replace(day=1),
+        max_value=hoy
+    )
+    fin_pl = col2.date_input(
+        "📅 Fecha Fin P&L", 
+        value=hoy,
+        max_value=hoy
+    )
+    
+    # Validar fechas
+    if inicio_pl > fin_pl:
+        st.error("⚠️ La fecha de inicio no puede ser posterior a la fecha de fin.")
+        st.stop()
+    
+    # Convertir a datetime
     inicio_pl = datetime(inicio_pl.year, inicio_pl.month, inicio_pl.day)
-    fin_pl    = datetime(fin_pl.year, fin_pl.month, fin_pl.day, 23, 59, 59)
+    fin_pl = datetime(fin_pl.year, fin_pl.month, fin_pl.day, 23, 59, 59)
 
-    usar_libro = st.toggle("🔎 Usar contabilidad (Libro diario) si está disponible", value=True)
+    # Opciones adicionales
+    col3, col4 = st.columns(2)
+    usar_libro = col3.toggle("🔎 Usar Libro Diario Contable", value=True, help="Incluir datos del libro diario para mayor precisión")
+    mostrar_detalle = col4.toggle("📋 Mostrar Detalle por Cuenta", value=False, help="Mostrar desglose detallado por cuenta contable")
 
-    # 1) Ventas (Ingresos) por mes
-    df_inv = list_documents("invoice", inicio_pl, fin_pl)
-    if df_inv.empty:
-        st.warning("No se encontraron facturas de venta en el rango.")
-    df_inv["_fecha"] = pd.to_datetime(df_inv.get("date"), unit="s", errors="coerce")
-    df_inv["_ym"] = df_inv["_fecha"].dt.to_period("M").astype(str)
-    df_inv["importe"] = pd.to_numeric(df_inv.get("subTotal"), errors="coerce").fillna(pd.to_numeric(df_inv.get("total"), errors="coerce")).fillna(0.0)
-    ingresos_mes = df_inv.groupby("_ym")["importe"].sum().rename("Ingresos").reset_index()
+    # Botón para actualizar datos
+    if st.button("🔄 Actualizar P&L", type="primary"):
+        st.session_state["pl_updated"] = True
+    
+    # Verificar conexión con Holded
+    if get_holded_token() is None:
+        st.error("❌ No se puede conectar con Holded. Verifica la configuración de la API.")
+        st.info("💡 Configura la API key de Holded en los secrets de Streamlit.")
+        st.stop()
 
-    # 2) Compras: intentamos desglosar por cuenta leyendo líneas
-    df_pur = list_documents("purchase", inicio_pl, fin_pl)
-    compras_rows = []
-    for _, row in df_pur.iterrows():
-        det = get_document_detail("purchase", str(row.get("id") or row.get("_id") or row.get("docId") or ""))
-        for (fecha, acct, acct_name, amt) in parse_purchase_lines(det):
-            ym = pd.to_datetime(fecha).to_period("M").astype(str) if pd.notna(fecha) else pd.to_datetime(row.get("date"), unit="s", errors="coerce").to_period("M").astype(str)
-            cat = classify_account(str(acct), acct_name)
-            compras_rows.append({"🗓️ Año-Mes": ym, "cuenta": acct, "nombre_cuenta": acct_name, "categoria": cat, "importe": amt})
+    try:
+        with st.spinner("📊 Procesando datos de Holded..."):
+            
+            # ====== 1. INGRESOS (FACTURAS DE VENTA) ======
+            st.subheader("💰 Procesando Ingresos...")
+            df_inv = list_documents("invoice", inicio_pl, fin_pl)
+            
+            ingresos_rows = []
+            if not df_inv.empty:
+                df_inv["_fecha"] = pd.to_datetime(df_inv.get("date", 0), unit="s", errors="coerce")
+                df_inv["_ym"] = df_inv["_fecha"].dt.to_period("M").astype(str)
+                
+                # Intentar múltiples campos para el importe
+                df_inv["importe"] = pd.to_numeric(
+                    df_inv.get("subTotal", df_inv.get("total", 0)), 
+                    errors="coerce"
+                ).fillna(0.0)
+                
+                ingresos_mes = df_inv.groupby("_ym")["importe"].sum().reset_index()
+                ingresos_mes.columns = ["🗓️ Año-Mes", "Ingresos"]
+                
+                st.success(f"✅ Procesadas {len(df_inv)} facturas de venta")
+            else:
+                st.warning("⚠️ No se encontraron facturas de venta en el período")
+                ingresos_mes = pd.DataFrame(columns=["🗓️ Año-Mes", "Ingresos"])
 
-    df_comp = pd.DataFrame(compras_rows)
-    if df_comp.empty:
-        # fallback: si no hay líneas, tratamos todo como Otros gastos de explotación
-        df_pur["_fecha"] = pd.to_datetime(df_pur.get("date"), unit="s", errors="coerce")
-        df_pur["_ym"] = df_pur["_fecha"].dt.to_period("M").astype(str)
-        df_comp = df_pur.groupby("_ym").apply(lambda g: pd.Series({"categoria": "Otros gastos de explotación", "importe": -abs(pd.to_numeric(g.get("total"), errors="coerce").fillna(0).sum())})).reset_index().rename(columns={"_ym":"🗓️ Año-Mes"})
+            # ====== 2. GASTOS (FACTURAS DE COMPRA) ======
+            st.subheader("💸 Procesando Gastos...")
+            df_pur = list_documents("purchase", inicio_pl, fin_pl)
+            
+            compras_rows = []
+            if not df_pur.empty:
+                progress_bar = st.progress(0)
+                total_purchases = len(df_pur)
+                
+                for idx, (_, row) in enumerate(df_pur.iterrows()):
+                    # Actualizar barra de progreso
+                    progress_bar.progress((idx + 1) / total_purchases)
+                    
+                    doc_id = str(row.get("id") or row.get("_id") or row.get("docId") or "")
+                    if doc_id:
+                        det = get_document_detail("purchase", doc_id)
+                        lines = parse_purchase_lines(det)
+                        
+                        for (fecha, acct, acct_name, amt) in lines:
+                            if pd.notna(fecha):
+                                ym = pd.to_datetime(fecha, unit="s", errors="coerce").to_period("M").astype(str)
+                            else:
+                                ym = pd.to_datetime(row.get("date"), unit="s", errors="coerce").to_period("M").astype(str)
+                            
+                            cat = classify_account(str(acct), acct_name)
+                            compras_rows.append({
+                                "🗓️ Año-Mes": ym,
+                                "cuenta": acct,
+                                "nombre_cuenta": acct_name,
+                                "categoria": cat,
+                                "importe": amt
+                            })
+                
+                progress_bar.empty()
+                st.success(f"✅ Procesadas {len(df_pur)} facturas de compra")
+            else:
+                st.warning("⚠️ No se encontraron facturas de compra en el período")
 
-    # 3) (Opcional) Libro diario para afinar categorías (personal, financieros, etc.)
-    ledger_rows = []
-    if usar_libro:
-        asientos = list_daily_ledger(inicio_pl, fin_pl)
-        for a in asientos:
-            fecha = a.get("date") or a.get("ts")
-            fecha = pd.to_datetime(fecha, errors="coerce")
-            ym = fecha.to_period("M").astype(str) if pd.notna(fecha) else None
-            # campos comunes: accountCode/account/name y amounts (debit/credit/amount)
-            acct_code = str(a.get("accountCode") or a.get("account") or "")
-            acct_name = str(a.get("accountName") or "")
-            # importe: intentamos 'amount' y si no, debit - credit
-            amt = a.get("amount", None)
-            if amt is None:
-                debit = a.get("debit", 0) or 0
-                credit = a.get("credit", 0) or 0
-                amt = float(debit) - float(credit)
-            cat = classify_account(acct_code, acct_name)
-            if ym:
-                ledger_rows.append({"🗓️ Año-Mes": ym, "categoria": cat, "importe": float(amt)})
-    df_ledger = pd.DataFrame(ledger_rows)
+            df_comp = pd.DataFrame(compras_rows)
+            
+            # Si no hay líneas detalladas, usar totales de compras
+            if df_comp.empty and not df_pur.empty:
+                st.info("📋 Usando totales de compras sin detalle por cuenta")
+                df_pur["_fecha"] = pd.to_datetime(df_pur.get("date"), unit="s", errors="coerce")
+                df_pur["_ym"] = df_pur["_fecha"].dt.to_period("M").astype(str)
+                df_pur["importe"] = -abs(pd.to_numeric(df_pur.get("total", 0), errors="coerce").fillna(0))
+                
+                df_comp = df_pur.groupby("_ym").agg({
+                    "importe": "sum"
+                }).reset_index()
+                df_comp["categoria"] = "Otros gastos de explotación"
+                df_comp.columns = ["🗓️ Año-Mes", "importe", "categoria"]
 
-    # 4) Agregación por KPI P&L
-    # Base: Ingresos desde facturas + gastos desde compras (si activamos libro, lo usamos para refinar y sumar también financieros y personal)
-    # Empezamos con facturación:
-    base = ingresos_mes.rename(columns={"_ym":"🗓️ Año-Mes"}).copy()
-    # Gastos (compras por categoría)
-    comp_piv = df_comp.groupby(["🗓️ Año-Mes","categoria"])["importe"].sum().unstack(fill_value=0).reset_index()
-    for col in ["Aprovisionamientos","Gastos de personal","Otros gastos de explotación","Ingresos financieros","Gastos financieros","Diferencias de cambio","Otros resultados"]:
-        if col not in comp_piv.columns:
-            comp_piv[col] = 0.0
-    df_pl = base.merge(comp_piv, on="🗓️ Año-Mes", how="outer").fillna(0)
+            # ====== 3. LIBRO DIARIO (OPCIONAL) ======
+            ledger_rows = []
+            if usar_libro:
+                st.subheader("📚 Procesando Libro Diario...")
+                with st.spinner("Obteniendo asientos contables..."):
+                    asientos = list_daily_ledger(inicio_pl, fin_pl)
+                    
+                    for asiento in asientos:
+                        fecha = asiento.get("date") or asiento.get("ts")
+                        fecha_dt = pd.to_datetime(fecha, errors="coerce")
+                        
+                        if pd.notna(fecha_dt):
+                            ym = fecha_dt.to_period("M").astype(str)
+                            
+                            # Obtener información de la cuenta
+                            acct_code = str(asiento.get("accountCode") or asiento.get("account") or "")
+                            acct_name = str(asiento.get("accountName") or asiento.get("description") or "")
+                            
+                            # Calcular importe (debit - credit o amount)
+                            amt = asiento.get("amount")
+                            if amt is None:
+                                debit = float(asiento.get("debit", 0) or 0)
+                                credit = float(asiento.get("credit", 0) or 0)
+                                amt = debit - credit
+                            else:
+                                amt = float(amt)
+                            
+                            cat = classify_account(acct_code, acct_name)
+                            ledger_rows.append({
+                                "🗓️ Año-Mes": ym,
+                                "categoria": cat,
+                                "importe": amt,
+                                "cuenta": acct_code,
+                                "descripcion": acct_name
+                            })
+                
+                if ledger_rows:
+                    st.success(f"✅ Procesados {len(ledger_rows)} asientos del libro diario")
+                else:
+                    st.warning("⚠️ No se encontraron asientos en el libro diario")
 
-    # Si hay libro diario, sumamos/sobrescribimos por categoría (prioridad contable)
-    if not df_ledger.empty:
-        add = df_ledger.groupby(["🗓️ Año-Mes","categoria"])["importe"].sum().unstack(fill_value=0).reset_index()
-        for col in add.columns:
-            if col != "🗓️ Año-Mes":
-                # sumamos (libro puede incluir nóminas, financieros, dif. de cambio que no estarán en compras)
-                df_pl[col] = df_pl.get(col, 0) + add[col]
+            df_ledger = pd.DataFrame(ledger_rows)
 
-    # KPIs derivados
-    for c in ["Ingresos","Aprovisionamientos","Gastos de personal","Otros gastos de explotación","Ingresos financieros","Gastos financieros","Diferencias de cambio","Otros resultados"]:
-        if c not in df_pl.columns:
-            df_pl[c] = 0.0
+            # ====== 4. CONSOLIDACIÓN P&L ======
+            st.subheader("📊 Consolidando P&L...")
+            
+            # Empezar con ingresos
+            df_pl = ingresos_mes.copy()
+            
+            # Agregar gastos por categoría
+            if not df_comp.empty:
+                comp_pivot = df_comp.groupby(["🗓️ Año-Mes", "categoria"])["importe"].sum().unstack(fill_value=0).reset_index()
+                df_pl = df_pl.merge(comp_pivot, on="🗓️ Año-Mes", how="outer").fillna(0)
+            
+            # Agregar datos del libro diario si están disponibles
+            if not df_ledger.empty:
+                ledger_pivot = df_ledger.groupby(["🗓️ Año-Mes", "categoria"])["importe"].sum().unstack(fill_value=0).reset_index()
+                
+                # Merge con df_pl, sumando valores existentes
+                for col in ledger_pivot.columns:
+                    if col != "🗓️ Año-Mes":
+                        if col in df_pl.columns:
+                            # Si la columna ya existe, sumar valores
+                            df_pl = df_pl.merge(
+                                ledger_pivot[["🗓️ Año-Mes", col]].rename(columns={col: f"{col}_ledger"}),
+                                on="🗓️ Año-Mes", how="outer"
+                            ).fillna(0)
+                            df_pl[col] = df_pl[col] + df_pl[f"{col}_ledger"]
+                            df_pl.drop(columns=[f"{col}_ledger"], inplace=True)
+                        else:
+                            # Si la columna no existe, hacer merge directo
+                            df_pl = df_pl.merge(
+                                ledger_pivot[["🗓️ Año-Mes", col]], 
+                                on="🗓️ Año-Mes", how="outer"
+                            ).fillna(0)
 
-    df_pl["Margen Bruto"] = df_pl["Ingresos"] + df_pl["Aprovisionamientos"]  # compras negativas
-    df_pl["EBITDA aprox"] = df_pl["Margen Bruto"] + df_pl["Gastos de personal"] + df_pl["Otros gastos de explotación"]
-    df_pl["Resultado antes de finanzas"] = df_pl["EBITDA aprox"] + df_pl["Otros resultados"]
-    df_pl["Resultado neto aprox"] = (df_pl["Resultado antes de finanzas"]
-                                     + df_pl["Ingresos financieros"]
-                                     + df_pl["Gastos financieros"]
-                                     + df_pl["Diferencias de cambio"])
+            # Asegurar que todas las columnas P&L existan
+            required_cols = [
+                "Ingresos", "Aprovisionamientos", "Gastos de personal", 
+                "Otros gastos de explotación", "Ingresos financieros", 
+                "Gastos financieros", "Diferencias de cambio", "Otros resultados"
+            ]
+            
+            for col in required_cols:
+                if col not in df_pl.columns:
+                    df_pl[col] = 0.0
 
-    df_pl = df_pl.sort_values("🗓️ Año-Mes")
-    st.subheader("KPIs P&L")
-    tot = df_pl.select_dtypes(include=[float,int]).sum(numeric_only=True)
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Ingresos", f"${tot['Ingresos']:,.2f}")
-    col2.metric("Margen Bruto", f"${tot['Margen Bruto']:,.2f}")
-    col3.metric("EBITDA aprox", f"${tot['EBITDA aprox']:,.2f}")
-    col4.metric("Resultado neto aprox", f"${tot['Resultado neto aprox']:,.2f}")
+            # ====== 5. CÁLCULO DE KPIS P&L ======
+            df_pl["Margen Bruto"] = df_pl["Ingresos"] + df_pl["Aprovisionamientos"]  # Compras son negativas
+            df_pl["EBITDA"] = (df_pl["Margen Bruto"] + 
+                             df_pl["Gastos de personal"] + 
+                             df_pl["Otros gastos de explotación"])
+            df_pl["Resultado Operativo"] = df_pl["EBITDA"] + df_pl["Otros resultados"]
+            df_pl["Resultado Financiero"] = (df_pl["Ingresos financieros"] + 
+                                           df_pl["Gastos financieros"] + 
+                                           df_pl["Diferencias de cambio"])
+            df_pl["Resultado Neto"] = df_pl["Resultado Operativo"] + df_pl["Resultado Financiero"]
 
-    st.subheader("Detalle por mes")
-    mostrar_cols = ["🗓️ Año-Mes","Ingresos","Aprovisionamientos","Gastos de personal","Otros gastos de explotación",
-                    "Margen Bruto","EBITDA aprox","Otros resultados","Ingresos financieros","Gastos financieros",
-                    "Diferencias de cambio","Resultado antes de finanzas","Resultado neto aprox"]
-    st.dataframe(df_pl[mostrar_cols], use_container_width=True)
+            # Ordenar por fecha
+            df_pl = df_pl.sort_values("🗓️ Año-Mes").fillna(0)
 
-    st.subheader("Evolución")
-    import altair as alt
-    evo = df_pl.melt(id_vars=["🗓️ Año-Mes"], value_vars=["Ingresos","Margen Bruto","EBITDA aprox","Resultado neto aprox"],
-                     var_name="KPI", value_name="Valor")
-    chart = (alt.Chart(evo)
-                .mark_line(point=True)
-                .encode(x="🗓️ Año-Mes:O", y="Valor:Q", color="KPI:N", tooltip=["🗓️ Año-Mes","KPI","Valor:Q"])
-                .properties(height=320))
-    st.altair_chart(chart, use_container_width=True)
+            # ====== 6. VISUALIZACIÓN ======
+            st.success("✅ P&L procesado correctamente")
+            
+            # KPIs principales
+            st.subheader("📈 KPIs Principales")
+            totales = df_pl.select_dtypes(include=[float, int]).sum(numeric_only=True)
+            
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("💰 Ingresos Totales", f"${totales['Ingresos']:,.2f}")
+            col2.metric("📊 Margen Bruto", f"${totales['Margen Bruto']:,.2f}")
+            col3.metric("🎯 EBITDA", f"${totales['EBITDA']:,.2f}")
+            col4.metric("💎 Resultado Neto", f"${totales['Resultado Neto']:,.2f}")
+
+            # Ratios adicionales
+            if totales['Ingresos'] > 0:
+                col5, col6, col7, col8 = st.columns(4)
+                col5.metric("Margen Bruto %", f"{(totales['Margen Bruto']/totales['Ingresos']*100):.1f}%")
+                col6.metric("EBITDA %", f"{(totales['EBITDA']/totales['Ingresos']*100):.1f}%")
+                col7.metric("Resultado Neto %", f"{(totales['Resultado Neto']/totales['Ingresos']*100):.1f}%")
+                if totales['Gastos de personal'] < 0:
+                    col8.metric("Gastos Personal %", f"{(abs(totales['Gastos de personal'])/totales['Ingresos']*100):.1f}%")
+
+            # Tabla detallada
+            st.subheader("📋 P&L Detallado por Mes")
+            
+            # Columnas a mostrar en el orden correcto
+            display_cols = [
+                "🗓️ Año-Mes", "Ingresos", "Aprovisionamientos", "Margen Bruto",
+                "Gastos de personal", "Otros gastos de explotación", "EBITDA",
+                "Otros resultados", "Resultado Operativo", "Ingresos financieros",
+                "Gastos financieros", "Diferencias de cambio", "Resultado Financiero",
+                "Resultado Neto"
+            ]
+            
+            df_display = df_pl[display_cols].copy()
+            
+            # Formatear números
+            numeric_cols = df_display.select_dtypes(include=[float, int]).columns
+            for col in numeric_cols:
+                df_display[col] = df_display[col].round(2)
+            
+            st.dataframe(df_display, use_container_width=True, height=400)
+
+            # Gráfico de evolución
+            st.subheader("📈 Evolución P&L")
+            
+            # Preparar datos para el gráfico
+            chart_data = df_pl[["🗓️ Año-Mes", "Ingresos", "Margen Bruto", "EBITDA", "Resultado Neto"]].melt(
+                id_vars=["🗓️ Año-Mes"],
+                var_name="Métrica",
+                value_name="Valor"
+            )
+            
+            chart = (
+                alt.Chart(chart_data)
+                .mark_line(point=True, strokeWidth=3)
+                .encode(
+                    x=alt.X("🗓️ Año-Mes:O", title="Período"),
+                    y=alt.Y("Valor:Q", title="Importe ($)"),
+                    color=alt.Color("Métrica:N", scale=alt.Scale(scheme='category10')),
+                    tooltip=["🗓️ Año-Mes:O", "Métrica:N", "Valor:Q"]
+                )
+                .properties(height=400, title="Evolución de Métricas P&L")
+            )
+            st.altair_chart(chart, use_container_width=True)
+
+            # Gráfico de composición de gastos
+            st.subheader("🥧 Composición de Gastos")
+            
+            gastos_cols = ["Aprovisionamientos", "Gastos de personal", "Otros gastos de explotación", "Gastos financieros"]
+            gastos_totales = {}
+            
+            for col in gastos_cols:
+                total = abs(df_pl[col].sum())
+                if total > 0:
+                    gastos_totales[col] = total
+            
+            if gastos_totales:
+                gastos_df = pd.DataFrame(list(gastos_totales.items()), columns=["Categoría", "Importe"])
+                
+                pie_chart = (
+                    alt.Chart(gastos_df)
+                    .mark_arc()
+                    .encode(
+                        theta=alt.Theta("Importe:Q"),
+                        color=alt.Color("Categoría:N"),
+                        tooltip=["Categoría:N", "Importe:Q"]
+                    )
+                    .properties(width=400, height=400, title="Distribución de Gastos")
+                )
+                st.altair_chart(pie_chart, use_container_width=True)
+
+            # Detalle por cuenta si se solicita
+            if mostrar_detalle:
+                st.subheader("🔍 Detalle por Cuenta Contable")
+                
+                # Combinar datos de compras y libro diario
+                detalle_rows = []
+                
+                # Desde compras
+                for _, row in df_comp.iterrows():
+                    detalle_rows.append({
+                        "Período": row.get("🗓️ Año-Mes"),
+                        "Cuenta": row.get("cuenta", "N/A"),
+                        "Descripción": row.get("nombre_cuenta", ""),
+                        "Categoría": row.get("categoria"),
+                        "Importe": row.get("importe", 0),
+                        "Origen": "Compras"
+                    })
+                
+                # Desde libro diario
+                for _, row in df_ledger.iterrows():
+                    detalle_rows.append({
+                        "Período": row.get("🗓️ Año-Mes"),
+                        "Cuenta": row.get("cuenta", "N/A"),
+                        "Descripción": row.get("descripcion", ""),
+                        "Categoría": row.get("categoria"),
+                        "Importe": row.get("importe", 0),
+                        "Origen": "Libro Diario"
+                    })
+                
+                if detalle_rows:
+                    df_detalle = pd.DataFrame(detalle_rows)
+                    df_detalle = df_detalle.round(2)
+                    
+                    # Filtros para el detalle
+                    col_filter1, col_filter2 = st.columns(2)
+                    
+                    categorias_disponibles = ["Todas"] + sorted(df_detalle["Categoría"].unique().tolist())
+                    cat_filter = col_filter1.selectbox("Filtrar por Categoría", categorias_disponibles)
+                    
+                    periodos_disponibles = ["Todos"] + sorted(df_detalle["Período"].unique().tolist())
+                    periodo_filter = col_filter2.selectbox("Filtrar por Período", periodos_disponibles)
+                    
+                    # Aplicar filtros
+                    df_filtered = df_detalle.copy()
+                    if cat_filter != "Todas":
+                        df_filtered = df_filtered[df_filtered["Categoría"] == cat_filter]
+                    if periodo_filter != "Todos":
+                        df_filtered = df_filtered[df_filtered["Período"] == periodo_filter]
+                    
+                    st.dataframe(df_filtered, use_container_width=True, height=400)
+                    
+                    # Resumen por categoría
+                    resumen_cat = df_filtered.groupby("Categoría")["Importe"].sum().reset_index()
+                    resumen_cat = resumen_cat.sort_values("Importe")
+                    
+                    st.subheader("📊 Resumen por Categoría")
+                    
+                    bar_chart = (
+                        alt.Chart(resumen_cat)
+                        .mark_bar()
+                        .encode(
+                            x=alt.X("Importe:Q", title="Importe ($)"),
+                            y=alt.Y("Categoría:N", sort='-x', title="Categoría"),
+                            color=alt.condition(
+                                alt.datum.Importe > 0,
+                                alt.value("steelblue"),
+                                alt.value("orange")
+                            ),
+                            tooltip=["Categoría:N", "Importe:Q"]
+                        )
+                        .properties(height=300)
+                    )
+                    st.altair_chart(bar_chart, use_container_width=True)
+
+            # Exportar datos
+            st.subheader("📥 Exportar Datos")
+            
+            col_exp1, col_exp2 = st.columns(2)
+            
+            # Exportar P&L resumido
+            csv_pl = df_display.to_csv(index=False)
+            col_exp1.download_button(
+                label="💾 Descargar P&L (CSV)",
+                data=csv_pl,
+                file_name=f"pl_holded_{inicio_pl.strftime('%Y%m%d')}_{fin_pl.strftime('%Y%m%d')}.csv",
+                mime="text/csv"
+            )
+            
+            # Exportar detalle si existe
+            if mostrar_detalle and 'df_detalle' in locals():
+                csv_detalle = df_detalle.to_csv(index=False)
+                col_exp2.download_button(
+                    label="📋 Descargar Detalle (CSV)",
+                    data=csv_detalle,
+                    file_name=f"detalle_cuentas_{inicio_pl.strftime('%Y%m%d')}_{fin_pl.strftime('%Y%m%d')}.csv",
+                    mime="text/csv"
+                )
+
+    except Exception as e:
+        st.error(f"❌ Error procesando P&L desde Holded: {str(e)}")
+        st.exception(e)  # Mostrar traceback completo para debugging
+        
+        # Información adicional para debugging
+        with st.expander("🔧 Información de Debug"):
+            st.write("**Variables disponibles:**")
+            local_vars = locals()
+            for var_name in ['df_inv', 'df_pur', 'df_comp', 'df_ledger']:
+                if var_name in local_vars:
+                    st.write(f"- {var_name}: {type(local_vars[var_name])}, Shape: {local_vars[var_name].shape if hasattr(local_vars[var_name], 'shape') else 'N/A'}")
+            
+            st.write("**Configuración:**")
+            st.write(f"- Período: {inicio_pl} - {fin_pl}")
+            st.write(f"- Usar libro diario: {usar_libro}")
+            st.write(f"- Token Holded disponible: {get_holded_token() is not None}")
+
+    # Información adicional
+    with st.expander("ℹ️ Información sobre P&L"):
+        st.markdown("""
+        **📊 Métricas calculadas:**
+        - **Ingresos**: Facturación de ventas
+        - **Margen Bruto**: Ingresos - Aprovisionamientos
+        - **EBITDA**: Margen Bruto - Gastos de personal - Otros gastos de explotación
+        - **Resultado Operativo**: EBITDA + Otros resultados
+        - **Resultado Neto**: Resultado Operativo + Resultado Financiero
+        
+        **🔄 Fuentes de datos:**
+        - Facturas de venta (Ingresos)
+        - Facturas de compra (Gastos por categoría)
+        - Libro diario contable (Refinamiento y gastos adicionales)
+        
+        **📋 Clasificación automática de cuentas:**
+        - Códigos 7xx: Ingresos
+        - Códigos 60x: Aprovisionamientos  
+        - Códigos 64x: Gastos de personal
+        - Códigos 66x/67x: Gastos/Ingresos financieros
+        - Otros 6xx: Otros gastos de explotación
+        """)
+
+# ====== FIN DEL CÓDIGO ======
 
 
