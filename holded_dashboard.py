@@ -854,7 +854,8 @@ with tab3:
                 "limit": 500
             }
             
-            data = make_holded_request("accounting/v1/ledger", params)
+            data = make_holded_request("accounting/v1/dailyledger", params)
+
             if not data:
                 return []
             
@@ -1167,6 +1168,16 @@ with tab3:
             st.subheader("📈 Evolución P&L")
             
             # Preparar datos para el gráfico
+            chart_cols = [
+                "🗓️ Año-Mes",
+                "Ingresos",
+                "Aprovisionamientos",
+                "Margen Bruto",
+                "Gastos de personal",
+                "Otros gastos de explotación",
+                "EBITDA",
+                "Resultado Neto"
+            ]
             
             chart_data = df_pl[chart_cols].melt(
                 id_vars=["🗓️ Año-Mes"],
@@ -1343,7 +1354,7 @@ with tab3:
             st.write("**Configuración:**")
             st.write(f"- Período: {inicio_pl} - {fin_pl}")
             st.write(f"- Usar libro diario: {usar_libro}")
-            st.write(f"- Usar datos demo: {usar_demo}")
+            st.write(f"- Usar datos demo: {st.session_state.get('force_demo', False)}")
             st.write(f"- Token Holded disponible: {get_holded_token() is not None}")
             
         # Ofrecer datos de ejemplo como fallback
