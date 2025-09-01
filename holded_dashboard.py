@@ -1223,7 +1223,7 @@ with tab3:
                 st.altair_chart(pie_chart, use_container_width=True)
 
             # Detalle por cuenta si se solicita
-            if mostrar_detalle and not usar_demo:
+            if mostrar_detalle:
                 st.subheader("🔍 Detalle por Cuenta Contable")
                 
                 # Combinar datos de compras y libro diario
@@ -1389,15 +1389,9 @@ with tab3:
         api_key = "tu-api-key-de-holded"
         ```
         
-        **🧪 Modo Demo:**
-        - Activa "Usar datos de ejemplo" para probar sin conexión a Holded
-        - Los datos demo incluyen patrones realistas de ingresos y gastos
-        - Útil para testing y presentaciones
         """)
         
-        if usar_demo:
-            st.success("🧪 **Modo Demo Activo** - Los datos mostrados son ejemplos para demostración")
-        elif get_holded_token():
+        if get_holded_token():
             st.success("✅ **Conectado a Holded** - Usando datos reales de tu cuenta")
         else:
             st.warning("⚠️ **Sin conexión a Holded** - Configura tu API key para usar datos reales")
