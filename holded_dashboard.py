@@ -976,8 +976,9 @@ for entry in ledger_entries_for_clients:
         "Cliente P&L",
         clientes_pl,
         index=clientes_pl.index(st.session_state.pl_cliente_sel) if st.session_state.pl_cliente_sel in clientes_pl else 0,
-        key="pl_cliente_input"
+        key="pl_cliente_input_tab3"
     )
+
     
     if cliente_pl != st.session_state.pl_cliente_sel:
         st.session_state.pl_cliente_sel = cliente_pl
