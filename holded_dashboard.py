@@ -717,24 +717,26 @@ with tab3:
         except Exception as e:
             st.warning(f"⚠️ Error obteniendo token de Holded: {e}. Usando datos de ejemplo.")
             return None
+
+            
     def make_holded_request(endpoint, params=None):
         """Hacer petición a la API de Holded"""
         token = get_holded_token()
         if not token:
             return None
-        
+    
         import requests
-        
+    
         base_url = "https://api.holded.com/api"
         headers = {
             "accept": "application/json",
             "key": token
         }
-        
+    
         try:
             url = f"{base_url}/{endpoint}"
             response = requests.get(url, headers=headers, params=params or {}, timeout=30)
-            
+    
             if response.status_code == 401:
                 st.error("❌ Token de Holded inválido o expirado. Verifica la configuración.")
                 return None
@@ -744,14 +746,18 @@ with tab3:
             elif response.status_code == 404:
                 st.warning("⚠️ Endpoint no encontrado en Holded API.")
                 return None
-                
+    
             response.raise_for_status()
-            
+    
             if not response.text.strip():
+                st.warning(f"⚠️ Respuesta vacía de Holded en {endpoint}")
                 return []
-            
+    
+            # 🔍 DEBUG: mostrar 200 caracteres de la respuesta cruda
+            st.write(f"🔍 Respuesta cruda de {endpoint}: {response.text[:200]}")
+    
             return response.json()
-            
+    
         except requests.exceptions.Timeout:
             st.error("❌ Timeout en la conexión con Holded API")
             return None
@@ -761,7 +767,6 @@ with tab3:
         except ValueError as e:
             st.error(f"❌ Error procesando respuesta JSON de Holded: {e}")
             return None
-
             
 
     def list_documents(doc_type, start_date, end_date):
