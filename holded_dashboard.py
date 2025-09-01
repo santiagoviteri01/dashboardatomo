@@ -974,10 +974,7 @@ for entry in ledger_entries_for_clients:
         st.session_state.pl_cliente_sel = "Todos"
     col1, =st.columns([1])
     cliente_pl = col1.selectbox(
-        "Cliente P&L",
-        clientes_pl_3,   # tu lista dinámica
-        index=0,         # "Todos" por defecto
-        key="tab3_cliente_pl"
+        "Cliente P&L", clientes_pl_3,index=0, key="tab_clientes"
     )
 
     
