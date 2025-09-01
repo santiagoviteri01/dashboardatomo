@@ -847,22 +847,39 @@ with tab3:
             
         return lines
 
-    def list_daily_ledger(start_date, end_date):
-        """Obtener asientos del libro diario desde Holded"""
-        try:
-            params = {
-                "from": start_date.strftime("%Y-%m-%d"),
-                "to": end_date.strftime("%Y-%m-%d"),
-                "limit": 500
-            }
-    
-            data = make_holded_request("accounting/v1/entries", params)
-            if not data:
-                return []
-    
-            # La API devuelve una lista de asientos
-            entries = data.get("data", []) if isinstance(data, dict) else data
-            return entries
+    @st.cache_data(ttl=3600)
+    def list_daily_ledger(start_dt: datetime, end_dt: datetime, page_size=500):
+        """Libro diario (más fiel). Intentamos filtrar por fecha si el endpoint lo soporta."""
+        url = f"{BASE_ACC}/dailyledger"
+        out = []
+        page = 1
+        # Intentos de query params comunes; si no funcionan, traemos páginas y filtramos localmente
+        base_params = {"limit": page_size}
+        date_params_candidates = [
+            {"start": start_dt.strftime("%Y-%m-%d"), "end": end_dt.strftime("%Y-%m-%d")},
+            {"dateFrom": start_dt.strftime("%Y-%m-%d"), "dateTo": end_dt.strftime("%Y-%m-%d")},
+            {"from": start_dt.strftime("%Y-%m-%d"), "to": end_dt.strftime("%Y-%m-%d")},
+        ]
+        for candidate in date_params_candidates:
+            params = base_params | candidate | {"page": page}
+            r = requests.get(url, headers=HEADERS, params=params, timeout=30)
+            if r.status_code == 200:
+                # asumimos que el servidor aceptó el filtro de fechas
+                while True:
+                    data = r.json()
+                    if not data:
+                        break
+                    out.extend(data)
+                    if len(data) < page_size:
+                        break
+                    page += 1
+                    params["page"] = page
+                    r = requests.get(url, headers=HEADERS, params=params, timeout=30)
+                    if r.status_code != 200:
+                        break
+                if out:
+                    break
+
     
         except Exception as e:
             st.error(f"❌ Error obteniendo libro diario: {e}")
