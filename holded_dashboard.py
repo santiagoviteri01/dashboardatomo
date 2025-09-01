@@ -967,16 +967,16 @@ for entry in ledger_entries_for_clients:
         clientes_ledger.append("Libro Diario (sin cliente)")
 
     clientes_unicos = sorted(set(clientes_invoices + clientes_purchases + clientes_ledger))
-    clientes_pl = ["Todos"] + clientes_unicos
+    clientes_pl_3 = ["Todos"] + clientes_unicos
     
     if "pl_cliente_sel" not in st.session_state:
         st.session_state.pl_cliente_sel = "Todos"
     
     cliente_pl = st.sidebar.selectbox(
         "Cliente P&L",
-        clientes_pl,
+        clientes_pl_3,
         index=clientes_pl.index(st.session_state.pl_cliente_sel) if st.session_state.pl_cliente_sel in clientes_pl else 0,
-        key="pl_cliente_input_tab3"
+        key="tab3_cliente_input"
     )
 
     
