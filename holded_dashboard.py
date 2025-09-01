@@ -274,7 +274,7 @@ with tab1:
     
     # 🎯 Filtro por cliente
     clientes_disponibles = sorted(df_completo["cliente_final"].dropna().unique())
-    filtro_cliente = st.sidebar.selectbox("🧑 Cliente específico", ["Todos"] + clientes_disponibles,key="tab1_cliente_pl")
+    filtro_cliente = st.sidebar.selectbox("🧑 Cliente específico", ["Todos"] + clientes_disponibles, key="tab1_cliente_pl")
     if filtro_cliente != "Todos":
         df_completo = df_completo[df_completo["cliente_final"] == filtro_cliente]
     
