@@ -856,11 +856,11 @@ with tab3:
                 "limit": 500
             }
     
-            data = make_holded_request("accounting/v1/journalentries", params)
+            data = make_holded_request("accounting/v1/entries", params)
             if not data:
                 return []
     
-            # La API devuelve una lista o un dict con "data"
+            # La API devuelve una lista de asientos
             entries = data.get("data", []) if isinstance(data, dict) else data
             return entries
     
