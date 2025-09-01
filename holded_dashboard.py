@@ -843,21 +843,22 @@ with tab3:
         return lines
 
     def list_daily_ledger(start_date, end_date):
-        """Obtener asientos del libro diario"""
+        """Obtener asientos del libro diario desde Holded"""
         try:
             params = {
-                "dateFrom": start_date.strftime("%Y-%m-%d"),
-                "dateTo": end_date.strftime("%Y-%m-%d"),
+                "from": start_date.strftime("%Y-%m-%d"),
+                "to": end_date.strftime("%Y-%m-%d"),
                 "limit": 500
             }
-            
-            data = make_holded_request("accounting/v1/dailyledger", params)
+    
+            data = make_holded_request("accounting/v1/journalentries", params)
             if not data:
                 return []
-            
+    
+            # La API devuelve una lista o un dict con "data"
             entries = data.get("data", []) if isinstance(data, dict) else data
             return entries
-                
+    
         except Exception as e:
             st.error(f"❌ Error obteniendo libro diario: {e}")
             return []
