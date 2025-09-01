@@ -971,7 +971,7 @@ for entry in ledger_entries_for_clients:
     
     if "pl_cliente_sel" not in st.session_state:
         st.session_state.pl_cliente_sel = "Todos"
-    col1=st.columns([1])
+    col1, =st.columns([1])
     cliente_pl = col1.selectbox(
         "Cliente P&L",
         clientes_pl_3,   # tu lista dinámica
