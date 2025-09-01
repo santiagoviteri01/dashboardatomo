@@ -970,10 +970,10 @@ for entry in ledger_entries_for_clients:
         clientes_ledger.append("Libro Diario (sin cliente)")
 
     clientes_unicos = sorted(set(clientes_invoices + clientes_purchases + clientes_ledger))
-    clientes_pl_3 = ["Todos"] + clientes_unicos
+    clientes_pl_3 = ["Todo"] + clientes_unicos
     
     if "pl_cliente_sel" not in st.session_state:
-        st.session_state.pl_cliente_sel = "Todos"
+        st.session_state.pl_cliente_sel = "Todo"
     col1, =st.columns([1])
     cliente_pl = col1.selectbox(
         "Cliente", clientes_pl_3,index=0, key="tab_clientes"
@@ -1048,7 +1048,7 @@ for entry in ledger_entries_for_clients:
                         cliente = invoice.get("contactName", "Sin nombre")
                         
                         # Filtrar por cliente si no es "Todos"
-                        if cliente_pl != "Todos" and cliente != cliente_pl:
+                        if cliente_pl != "Todo" and cliente != cliente_pl:
                             continue
                         
                         periodo = fecha.to_period("M").strftime("%Y-%m")
