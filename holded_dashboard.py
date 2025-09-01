@@ -847,7 +847,7 @@ with tab3:
             
         return lines
 
-    @st.cache_data(ttl=3600)
+    @st.cache_data(ttl=60)
     def list_daily_ledger(start_dt: datetime, end_dt: datetime, page_size=500):
         """Libro diario (más fiel). Intentamos filtrar por fecha si el endpoint lo soporta."""
         url = f"{BASE_ACC}/dailyledger"
@@ -879,11 +879,34 @@ with tab3:
                         break
                 if out:
                     break
-
     
-        except Exception as e:
-            st.error(f"❌ Error obteniendo libro diario: {e}")
-            return []
+        if not out:
+            # fallback sin filtros: paginamos y luego filtramos por fecha localmente
+            page = 1
+            while True:
+                r = requests.get(url, headers=HEADERS, params={"page": page, "limit": page_size}, timeout=30)
+                if r.status_code != 200:
+                    break
+                data = r.json()
+                if not data:
+                    break
+                out.extend(data)
+                if len(data) < page_size:
+                    break
+                page += 1
+            # filtro local
+            def to_dt(x):
+                try:
+                    return pd.to_datetime(x)
+                except Exception:
+                    return pd.NaT
+            for d in out:
+                if "date" in d:
+                    d["_date"] = to_dt(d["date"])
+            out = [d for d in out if d.get("_date") is not pd.NaT and start_dt <= d["_date"] <= end_dt]
+    
+        return out  # lista de asientos
+
 
     def classify_account(account_code, account_name):
         """Clasificar cuenta contable en categorías P&L"""
