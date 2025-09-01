@@ -754,7 +754,7 @@ with tab3:
                 return []
     
             # 🔍 DEBUG: mostrar 200 caracteres de la respuesta cruda
-            st.write(f"🔍 Respuesta cruda de {endpoint}: {response.text[:200]}")
+            #st.write(f"🔍 Respuesta cruda de {endpoint}: {response.text[:200]}")
     
             return response.json()
     
