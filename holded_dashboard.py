@@ -975,7 +975,7 @@ for entry in ledger_entries_for_clients:
     cliente_pl = st.sidebar.selectbox(
         "Cliente P&L",
         clientes_pl_3,
-        index=clientes_pl.index(st.session_state.pl_cliente_sel) if st.session_state.pl_cliente_sel in clientes_pl_3 else 0,
+        index=clientes_pl_3.index(st.session_state.pl_cliente_sel) if st.session_state.pl_cliente_sel in clientes_pl_3 else 0,
         key="tab3_cliente_input"
     )
 
