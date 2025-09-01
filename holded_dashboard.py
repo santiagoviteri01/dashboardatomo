@@ -845,23 +845,19 @@ with tab3:
     def list_daily_ledger(start_date, end_date):
         """Obtener asientos del libro diario"""
         try:
-            start_ts = int(start_date.timestamp())
-            end_ts = int(end_date.timestamp())
-            
             params = {
-                "dateFrom": start_ts,
-                "dateTo": end_ts,
+                "dateFrom": start_date.strftime("%Y-%m-%d"),
+                "dateTo": end_date.strftime("%Y-%m-%d"),
                 "limit": 500
             }
             
             data = make_holded_request("accounting/v1/dailyledger", params)
-
             if not data:
                 return []
             
             entries = data.get("data", []) if isinstance(data, dict) else data
             return entries
-            
+                
         except Exception as e:
             st.error(f"❌ Error obteniendo libro diario: {e}")
             return []
