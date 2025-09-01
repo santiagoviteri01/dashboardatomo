@@ -973,385 +973,386 @@ for entry in ledger_entries_for_clients:
     else:
         clientes_ledger.append("Libro Diario (sin cliente)")
 
-    clientes_unicos = sorted(set(clientes_invoices + clientes_purchases + clientes_ledger))
-    clientes_pl_3 = ["Todo"] + clientes_unicos
-    
-    if "pl_cliente_sel" not in st.session_state:
-        st.session_state.pl_cliente_sel = "Todo"
-    col1, =st.columns([1])
-    cliente_pl = col1.selectbox(
-        "Cliente (Tab 3)",
-        clientes_pl_3,
-        index=0,
-        key="tab3_cliente_select"
-    )
+# 👇 fuera del for
+clientes_unicos = sorted(set(clientes_invoices + clientes_purchases + clientes_ledger))
+clientes_pl_3 = ["Todo"] + clientes_unicos
 
+if "pl_cliente_sel" not in st.session_state:
+    st.session_state.pl_cliente_sel = "Todo"
+
+col1, = st.columns([1])
+cliente_pl = col1.selectbox(
+    "Cliente (Tab 3)", clientes_pl_3, index=0, key="tab3_cliente_select"
+)
     
-    if cliente_pl != st.session_state.pl_cliente_sel:
-        st.session_state.pl_cliente_sel = cliente_pl
-        st.session_state.pl_data_updated = False
+
+
+
+if cliente_pl != st.session_state.pl_cliente_sel:
+    st.session_state.pl_cliente_sel = cliente_pl
+    st.session_state.pl_data_updated = False
+
+# Opciones adicionales
+usar_libro_diario = st.sidebar.checkbox("Usar Libro Diario", value=True, key="usar_libro")
+mostrar_detalle_cuentas = st.sidebar.checkbox("Mostrar Detalle por Cuenta", value=False, key="mostrar_detalle")
+
+# Botón para forzar actualización
+if st.sidebar.button("🔄 Actualizar P&L", type="primary"):
+    st.session_state.pl_data_updated = False
+    # Limpiar cache
+    list_documents_corrected.clear()
+    get_document_detail_corrected.clear()
+    list_daily_ledger_corrected.clear()
+
+# Mostrar filtros activos
+st.sidebar.info(f"""
+**Filtros activos:**
+- Período: {fecha_inicio_pl} a {fecha_fin_pl}
+- Cliente: {cliente_pl}
+- Libro diario: {'Sí' if usar_libro_diario else 'No'}
+""")
+
+# ====== PROCESAMIENTO DE DATOS ======
+
+# Convertir fechas a datetime
+inicio_dt = datetime.combine(fecha_inicio_pl, datetime.min.time())
+fin_dt = datetime.combine(fecha_fin_pl, datetime.max.time())
+
+# Verificar si necesitamos actualizar datos
+if not st.session_state.get("pl_data_updated", False):
     
-    # Opciones adicionales
-    usar_libro_diario = st.sidebar.checkbox("Usar Libro Diario", value=True, key="usar_libro")
-    mostrar_detalle_cuentas = st.sidebar.checkbox("Mostrar Detalle por Cuenta", value=False, key="mostrar_detalle")
-    
-    # Botón para forzar actualización
-    if st.sidebar.button("🔄 Actualizar P&L", type="primary"):
-        st.session_state.pl_data_updated = False
-        # Limpiar cache
-        list_documents_corrected.clear()
-        get_document_detail_corrected.clear()
-        list_daily_ledger_corrected.clear()
-    
-    # Mostrar filtros activos
-    st.sidebar.info(f"""
-    **Filtros activos:**
-    - Período: {fecha_inicio_pl} a {fecha_fin_pl}
-    - Cliente: {cliente_pl}
-    - Libro diario: {'Sí' if usar_libro_diario else 'No'}
-    """)
-    
-    # ====== PROCESAMIENTO DE DATOS ======
-    
-    # Convertir fechas a datetime
-    inicio_dt = datetime.combine(fecha_inicio_pl, datetime.min.time())
-    fin_dt = datetime.combine(fecha_fin_pl, datetime.max.time())
-    
-    # Verificar si necesitamos actualizar datos
-    if not st.session_state.get("pl_data_updated", False):
-        
-        try:
-            with st.spinner("Cargando datos de Holded..."):
-                
-                # 1. CARGAR FACTURAS DE VENTA (INGRESOS)
-                st.info("📥 Cargando facturas de venta...")
-                df_invoices = list_documents_corrected("invoice", inicio_dt, fin_dt)
-                
-                # Procesar ingresos
-                ingresos_data = []
-                if not df_invoices.empty:
-                    for _, invoice in df_invoices.iterrows():
-                        # Convertir fecha
-                        invoice_date = invoice.get("date")
-                        if isinstance(invoice_date, (int, float)):
-                            fecha = pd.to_datetime(invoice_date, unit='s', errors='coerce')
-                        else:
-                            fecha = pd.to_datetime(invoice_date, errors='coerce')
+    try:
+        with st.spinner("Cargando datos de Holded..."):
+            
+            # 1. CARGAR FACTURAS DE VENTA (INGRESOS)
+            st.info("📥 Cargando facturas de venta...")
+            df_invoices = list_documents_corrected("invoice", inicio_dt, fin_dt)
+            
+            # Procesar ingresos
+            ingresos_data = []
+            if not df_invoices.empty:
+                for _, invoice in df_invoices.iterrows():
+                    # Convertir fecha
+                    invoice_date = invoice.get("date")
+                    if isinstance(invoice_date, (int, float)):
+                        fecha = pd.to_datetime(invoice_date, unit='s', errors='coerce')
+                    else:
+                        fecha = pd.to_datetime(invoice_date, errors='coerce')
+                    
+                    if pd.isna(fecha):
+                        continue
                         
-                        if pd.isna(fecha):
-                            continue
+                    # Obtener importe
+                    amount = 0
+                    for field in ["subTotal", "subtotal", "untaxedAmount", "total"]:
+                        if field in invoice and invoice[field] is not None:
+                            try:
+                                amount = float(invoice[field])
+                                break
+                            except (ValueError, TypeError):
+                                continue
+                    
+                    # Obtener cliente
+                    cliente = invoice.get("contactName", "Sin nombre")
+                    
+                    # Filtrar por cliente si no es "Todos"
+                    if cliente_pl != "Todo" and cliente != cliente_pl:
+                        continue
+                    
+                    periodo = fecha.to_period("M").strftime("%Y-%m")
+                    ingresos_data.append({
+                        "periodo": periodo,
+                        "fecha": fecha,
+                        "cliente": cliente,
+                        "categoria": "Ingresos",
+                        "importe": amount,
+                        "cuenta": "70XXX",
+                        "descripcion": f"Factura {invoice.get('docNumber', '')}"
+                    })
+            
+            st.success(f"✅ Procesadas {len(ingresos_data)} facturas de venta")
+            
+            # 2. CARGAR FACTURAS DE COMPRA (GASTOS)
+            st.info("📤 Cargando facturas de compra...")
+            df_purchases = list_documents_corrected("purchase", inicio_dt, fin_dt)
+            
+            gastos_data = []
+            if not df_purchases.empty:
+                progress_bar = st.progress(0)
+                for idx, (_, purchase) in enumerate(df_purchases.iterrows()):
+                    progress_bar.progress((idx + 1) / len(df_purchases))
+                    
+                    purchase_id = str(purchase.get("id", ""))
+                    if purchase_id:
+                        # Obtener detalle
+                        detail = get_document_detail_corrected("purchase", purchase_id)
+                        lines = parse_purchase_lines_corrected(detail)
+                        
+                        for fecha, account_code, account_name, amount in lines:
+                            if pd.isna(fecha) or amount == 0:
+                                continue
                             
-                        # Obtener importe
-                        amount = 0
-                        for field in ["subTotal", "subtotal", "untaxedAmount", "total"]:
-                            if field in invoice and invoice[field] is not None:
-                                try:
-                                    amount = float(invoice[field])
-                                    break
-                                except (ValueError, TypeError):
-                                    continue
-                        
-                        # Obtener cliente
-                        cliente = invoice.get("contactName", "Sin nombre")
-                        
-                        # Filtrar por cliente si no es "Todos"
-                        if cliente_pl != "Todo" and cliente != cliente_pl:
-                            continue
-                        
-                        periodo = fecha.to_period("M").strftime("%Y-%m")
-                        ingresos_data.append({
-                            "periodo": periodo,
-                            "fecha": fecha,
-                            "cliente": cliente,
-                            "categoria": "Ingresos",
-                            "importe": amount,
-                            "cuenta": "70XXX",
-                            "descripcion": f"Factura {invoice.get('docNumber', '')}"
-                        })
-                
-                st.success(f"✅ Procesadas {len(ingresos_data)} facturas de venta")
-                
-                # 2. CARGAR FACTURAS DE COMPRA (GASTOS)
-                st.info("📤 Cargando facturas de compra...")
-                df_purchases = list_documents_corrected("purchase", inicio_dt, fin_dt)
-                
-                gastos_data = []
-                if not df_purchases.empty:
-                    progress_bar = st.progress(0)
-                    for idx, (_, purchase) in enumerate(df_purchases.iterrows()):
-                        progress_bar.progress((idx + 1) / len(df_purchases))
-                        
-                        purchase_id = str(purchase.get("id", ""))
-                        if purchase_id:
-                            # Obtener detalle
-                            detail = get_document_detail_corrected("purchase", purchase_id)
-                            lines = parse_purchase_lines_corrected(detail)
+                            # Filtrar por cliente si aplica (usar proveedor)
+                            proveedor = purchase.get("contactName", "Sin nombre")
+                            if cliente_pl != "Todos" and proveedor != cliente_pl:
+                                continue
                             
-                            for fecha, account_code, account_name, amount in lines:
-                                if pd.isna(fecha) or amount == 0:
-                                    continue
-                                
-                                # Filtrar por cliente si aplica (usar proveedor)
-                                proveedor = purchase.get("contactName", "Sin nombre")
-                                if cliente_pl != "Todos" and proveedor != cliente_pl:
-                                    continue
-                                
-                                periodo = fecha.to_period("M").strftime("%Y-%m")
-                                categoria = classify_account_corrected(account_code, account_name)
-                                
-                                gastos_data.append({
-                                    "periodo": periodo,
-                                    "fecha": fecha,
-                                    "cliente": proveedor,
-                                    "categoria": categoria,
-                                    "importe": amount,
-                                    "cuenta": account_code,
-                                    "descripcion": account_name
-                                })
+                            periodo = fecha.to_period("M").strftime("%Y-%m")
+                            categoria = classify_account_corrected(account_code, account_name)
+                            
+                            gastos_data.append({
+                                "periodo": periodo,
+                                "fecha": fecha,
+                                "cliente": proveedor,
+                                "categoria": categoria,
+                                "importe": amount,
+                                "cuenta": account_code,
+                                "descripcion": account_name
+                            })
+                
+                progress_bar.empty()
+            
+            st.success(f"✅ Procesadas {len(gastos_data)} líneas de compra")
+            
+            # 3. CARGAR LIBRO DIARIO (SI ESTÁ HABILITADO)
+            diario_data = []
+            if usar_libro_diario:
+                st.info("📚 Cargando libro diario...")
+                ledger_entries = list_daily_ledger_corrected(inicio_dt, fin_dt)
+                
+                for entry in ledger_entries:
+                    # Procesar fecha
+                    entry_date = entry.get("date")
+                    if isinstance(entry_date, (int, float)):
+                        fecha = pd.to_datetime(entry_date, unit='s', errors='coerce')
+                    else:
+                        fecha = pd.to_datetime(entry_date, errors='coerce')
                     
-                    progress_bar.empty()
-                
-                st.success(f"✅ Procesadas {len(gastos_data)} líneas de compra")
-                
-                # 3. CARGAR LIBRO DIARIO (SI ESTÁ HABILITADO)
-                diario_data = []
-                if usar_libro_diario:
-                    st.info("📚 Cargando libro diario...")
-                    ledger_entries = list_daily_ledger_corrected(inicio_dt, fin_dt)
+                    if pd.isna(fecha):
+                        continue
                     
-                    for entry in ledger_entries:
-                        # Procesar fecha
-                        entry_date = entry.get("date")
-                        if isinstance(entry_date, (int, float)):
-                            fecha = pd.to_datetime(entry_date, unit='s', errors='coerce')
-                        else:
-                            fecha = pd.to_datetime(entry_date, errors='coerce')
-                        
-                        if pd.isna(fecha):
-                            continue
-                        
-                        # Calcular importe
-                        amount = entry.get("amount")
-                        if amount is None:
-                            debit = float(entry.get("debit", 0) or 0)
-                            credit = float(entry.get("credit", 0) or 0)
-                            amount = debit - credit
-                        else:
-                            amount = float(amount)
-                        
-                        if amount == 0:
-                            continue
-                        
-                        account_code = str(entry.get("accountCode", ""))
-                        account_name = str(entry.get("accountName", ""))
-                        categoria = classify_account_corrected(account_code, account_name)
-                        periodo = fecha.to_period("M").strftime("%Y-%m")
-                        
-                        cliente_entry = entry.get("contactName") or entry.get("thirdParty") or entry.get("customer") or "Libro Diario (sin cliente)"
-                        
-                        # Aplicar filtro de cliente si no es "Todos"
-                        if cliente_pl != "Todos" and cliente_entry != cliente_pl:
-                            continue
-                        
-                        diario_data.append({
-                            "periodo": periodo,
-                            "fecha": fecha,
-                            "cliente": cliente_entry,
-                            "categoria": categoria,
-                            "importe": amount,
-                            "cuenta": account_code,
-                            "descripcion": account_name
-                        })
+                    # Calcular importe
+                    amount = entry.get("amount")
+                    if amount is None:
+                        debit = float(entry.get("debit", 0) or 0)
+                        credit = float(entry.get("credit", 0) or 0)
+                        amount = debit - credit
+                    else:
+                        amount = float(amount)
                     
-                    st.success(f"✅ Procesadas {len(diario_data)} entradas del libro diario")
+                    if amount == 0:
+                        continue
+                    
+                    account_code = str(entry.get("accountCode", ""))
+                    account_name = str(entry.get("accountName", ""))
+                    categoria = classify_account_corrected(account_code, account_name)
+                    periodo = fecha.to_period("M").strftime("%Y-%m")
+                    
+                    cliente_entry = entry.get("contactName") or entry.get("thirdParty") or entry.get("customer") or "Libro Diario (sin cliente)"
+                    
+                    # Aplicar filtro de cliente si no es "Todos"
+                    if cliente_pl != "Todos" and cliente_entry != cliente_pl:
+                        continue
+                    
+                    diario_data.append({
+                        "periodo": periodo,
+                        "fecha": fecha,
+                        "cliente": cliente_entry,
+                        "categoria": categoria,
+                        "importe": amount,
+                        "cuenta": account_code,
+                        "descripcion": account_name
+                    })
                 
-                # 4. CONSOLIDAR DATOS
-                all_data = ingresos_data + gastos_data + diario_data
-                df_consolidated = pd.DataFrame(all_data)
-                
-                if df_consolidated.empty:
-                    st.warning("⚠️ No se encontraron datos en el período seleccionado")
-                    st.session_state.pl_data_updated = True
-                    st.stop()
-                
-                # Guardar en session state
-                st.session_state.df_pl_consolidated = df_consolidated
+                st.success(f"✅ Procesadas {len(diario_data)} entradas del libro diario")
+            
+            # 4. CONSOLIDAR DATOS
+            all_data = ingresos_data + gastos_data + diario_data
+            df_consolidated = pd.DataFrame(all_data)
+            
+            if df_consolidated.empty:
+                st.warning("⚠️ No se encontraron datos en el período seleccionado")
                 st.session_state.pl_data_updated = True
-                
-        except Exception as e:
-            st.error(f"❌ Error procesando datos: {str(e)}")
-            st.exception(e)
-            st.stop()
+                st.stop()
+            
+            # Guardar en session state
+            st.session_state.df_pl_consolidated = df_consolidated
+            st.session_state.pl_data_updated = True
+            
+    except Exception as e:
+        st.error(f"❌ Error procesando datos: {str(e)}")
+        st.exception(e)
+        st.stop()
+
+# ====== MOSTRAR RESULTADOS ======
+
+if st.session_state.get("pl_data_updated", False):
+    df_data = st.session_state.get("df_pl_consolidated", pd.DataFrame())
     
-    # ====== MOSTRAR RESULTADOS ======
-    
-    if st.session_state.get("pl_data_updated", False):
-        df_data = st.session_state.get("df_pl_consolidated", pd.DataFrame())
+    if not df_data.empty:
         
-        if not df_data.empty:
+        # Crear P&L agregado
+        df_pl_summary = df_data.groupby(["periodo", "categoria"])["importe"].sum().unstack(fill_value=0).reset_index()
+        
+        # Asegurar todas las columnas necesarias
+        required_columns = [
+            "Ingresos", "Aprovisionamientos", "Gastos de personal",
+            "Otros gastos de explotación", "Ingresos financieros",
+            "Gastos financieros", "Diferencias de cambio", "Otros resultados"
+        ]
+        
+        for col in required_columns:
+            if col not in df_pl_summary.columns:
+                df_pl_summary[col] = 0.0
+        
+        # Calcular métricas
+        df_pl_summary["Margen Bruto"] = df_pl_summary["Ingresos"] + df_pl_summary["Aprovisionamientos"]
+        df_pl_summary["EBITDA"] = (df_pl_summary["Margen Bruto"] + 
+                                 df_pl_summary["Gastos de personal"] + 
+                                 df_pl_summary["Otros gastos de explotación"])
+        df_pl_summary["Resultado Operativo"] = df_pl_summary["EBITDA"] + df_pl_summary["Otros resultados"]
+        df_pl_summary["Resultado Financiero"] = (df_pl_summary["Ingresos financieros"] + 
+                                               df_pl_summary["Gastos financieros"] + 
+                                               df_pl_summary["Diferencias de cambio"])
+        df_pl_summary["Resultado Neto"] = df_pl_summary["Resultado Operativo"] + df_pl_summary["Resultado Financiero"]
+        
+        # Mostrar métricas principales
+        st.subheader("📊 Resumen P&L")
+        
+        totales = df_pl_summary.select_dtypes(include=[float, int]).sum()
+        
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("💰 Ingresos", f"${totales['Ingresos']:,.2f}")
+        col2.metric("📈 Margen Bruto", f"${totales['Margen Bruto']:,.2f}")
+        col3.metric("🎯 EBITDA", f"${totales['EBITDA']:,.2f}")
+        col4.metric("💎 Resultado Neto", f"${totales['Resultado Neto']:,.2f}")
+        
+        # Ratios
+        if totales['Ingresos'] > 0:
+            col5, col6, col7, col8 = st.columns(4)
+            col5.metric("Margen %", f"{(totales['Margen Bruto']/totales['Ingresos']*100):.1f}%")
+            col6.metric("EBITDA %", f"{(totales['EBITDA']/totales['Ingresos']*100):.1f}%")
+            col7.metric("Resultado %", f"{(totales['Resultado Neto']/totales['Ingresos']*100):.1f}%")
             
-            # Crear P&L agregado
-            df_pl_summary = df_data.groupby(["periodo", "categoria"])["importe"].sum().unstack(fill_value=0).reset_index()
+            gastos_personal = abs(totales['Gastos de personal'])
+            if gastos_personal > 0:
+                col8.metric("Personal %", f"{(gastos_personal/totales['Ingresos']*100):.1f}%")
+        
+        # Tabla detallada
+        st.subheader("📋 P&L Detallado")
+        
+        display_columns = [
+            "periodo", "Ingresos", "Aprovisionamientos", "Margen Bruto",
+            "Gastos de personal", "Otros gastos de explotación", "EBITDA",
+            "Ingresos financieros", "Gastos financieros", "Diferencias de cambio",
+            "Resultado Financiero", "Otros resultados", "Resultado Operativo", "Resultado Neto"
+        ]
+        
+        df_display = df_pl_summary[display_columns].copy()
+        df_display = df_display.round(2)
+        df_display.columns = [col.replace('periodo', '🗓️ Período') for col in df_display.columns]
+        
+        st.dataframe(df_display, use_container_width=True, height=400)
+        
+        # Gráfico de evolución
+        if len(df_pl_summary) > 1:
+            st.subheader("📈 Evolución Temporal")
             
-            # Asegurar todas las columnas necesarias
-            required_columns = [
-                "Ingresos", "Aprovisionamientos", "Gastos de personal",
-                "Otros gastos de explotación", "Ingresos financieros",
-                "Gastos financieros", "Diferencias de cambio", "Otros resultados"
-            ]
+            # Preparar datos para gráfico
+            chart_metrics = ["Ingresos", "Margen Bruto", "EBITDA", "Resultado Neto"]
+            chart_data = df_pl_summary[["periodo"] + chart_metrics].melt(
+                id_vars=["periodo"],
+                var_name="Métrica",
+                value_name="Valor"
+            )
             
-            for col in required_columns:
-                if col not in df_pl_summary.columns:
-                    df_pl_summary[col] = 0.0
-            
-            # Calcular métricas
-            df_pl_summary["Margen Bruto"] = df_pl_summary["Ingresos"] + df_pl_summary["Aprovisionamientos"]
-            df_pl_summary["EBITDA"] = (df_pl_summary["Margen Bruto"] + 
-                                     df_pl_summary["Gastos de personal"] + 
-                                     df_pl_summary["Otros gastos de explotación"])
-            df_pl_summary["Resultado Operativo"] = df_pl_summary["EBITDA"] + df_pl_summary["Otros resultados"]
-            df_pl_summary["Resultado Financiero"] = (df_pl_summary["Ingresos financieros"] + 
-                                                   df_pl_summary["Gastos financieros"] + 
-                                                   df_pl_summary["Diferencias de cambio"])
-            df_pl_summary["Resultado Neto"] = df_pl_summary["Resultado Operativo"] + df_pl_summary["Resultado Financiero"]
-            
-            # Mostrar métricas principales
-            st.subheader("📊 Resumen P&L")
-            
-            totales = df_pl_summary.select_dtypes(include=[float, int]).sum()
-            
-            col1, col2, col3, col4 = st.columns(4)
-            col1.metric("💰 Ingresos", f"${totales['Ingresos']:,.2f}")
-            col2.metric("📈 Margen Bruto", f"${totales['Margen Bruto']:,.2f}")
-            col3.metric("🎯 EBITDA", f"${totales['EBITDA']:,.2f}")
-            col4.metric("💎 Resultado Neto", f"${totales['Resultado Neto']:,.2f}")
-            
-            # Ratios
-            if totales['Ingresos'] > 0:
-                col5, col6, col7, col8 = st.columns(4)
-                col5.metric("Margen %", f"{(totales['Margen Bruto']/totales['Ingresos']*100):.1f}%")
-                col6.metric("EBITDA %", f"{(totales['EBITDA']/totales['Ingresos']*100):.1f}%")
-                col7.metric("Resultado %", f"{(totales['Resultado Neto']/totales['Ingresos']*100):.1f}%")
-                
-                gastos_personal = abs(totales['Gastos de personal'])
-                if gastos_personal > 0:
-                    col8.metric("Personal %", f"{(gastos_personal/totales['Ingresos']*100):.1f}%")
-            
-            # Tabla detallada
-            st.subheader("📋 P&L Detallado")
-            
-            display_columns = [
-                "periodo", "Ingresos", "Aprovisionamientos", "Margen Bruto",
-                "Gastos de personal", "Otros gastos de explotación", "EBITDA",
-                "Ingresos financieros", "Gastos financieros", "Diferencias de cambio",
-                "Resultado Financiero", "Otros resultados", "Resultado Operativo", "Resultado Neto"
-            ]
-            
-            df_display = df_pl_summary[display_columns].copy()
-            df_display = df_display.round(2)
-            df_display.columns = [col.replace('periodo', '🗓️ Período') for col in df_display.columns]
-            
-            st.dataframe(df_display, use_container_width=True, height=400)
-            
-            # Gráfico de evolución
-            if len(df_pl_summary) > 1:
-                st.subheader("📈 Evolución Temporal")
-                
-                # Preparar datos para gráfico
-                chart_metrics = ["Ingresos", "Margen Bruto", "EBITDA", "Resultado Neto"]
-                chart_data = df_pl_summary[["periodo"] + chart_metrics].melt(
-                    id_vars=["periodo"],
-                    var_name="Métrica",
-                    value_name="Valor"
+            chart = (
+                alt.Chart(chart_data)
+                .mark_line(point=True)
+                .encode(
+                    x=alt.X("periodo:O", title="Período"),
+                    y=alt.Y("Valor:Q", title="Importe ($)"),
+                    color=alt.Color("Métrica:N"),
+                    tooltip=["periodo:O", "Métrica:N", "Valor:Q"]
                 )
-                
-                chart = (
-                    alt.Chart(chart_data)
-                    .mark_line(point=True)
-                    .encode(
-                        x=alt.X("periodo:O", title="Período"),
-                        y=alt.Y("Valor:Q", title="Importe ($)"),
-                        color=alt.Color("Métrica:N"),
-                        tooltip=["periodo:O", "Métrica:N", "Valor:Q"]
-                    )
-                    .properties(height=400)
-                )
-                st.altair_chart(chart, use_container_width=True)
+                .properties(height=400)
+            )
+            st.altair_chart(chart, use_container_width=True)
+        
+        # Detalle por cuenta si está habilitado
+        if mostrar_detalle_cuentas:
+            st.subheader("🔍 Detalle por Cuenta Contable")
             
-            # Detalle por cuenta si está habilitado
-            if mostrar_detalle_cuentas:
-                st.subheader("🔍 Detalle por Cuenta Contable")
+            # Filtros para detalle
+            col_f1, col_f2, col_f3 = st.columns(3)
+            
+            categorias_disponibles = ["Todas"] + sorted(df_data["categoria"].unique().tolist())
+            cat_filter = col_f1.selectbox("Categoría", categorias_disponibles, key="cat_detail")
+            
+            periodos_disponibles = ["Todos"] + sorted(df_data["periodo"].unique().tolist())
+            periodo_filter = col_f2.selectbox("Período", periodos_disponibles, key="periodo_detail")
+            
+            clientes_disponibles = ["Todos"] + sorted(df_data["cliente"].unique().tolist())
+            cliente_detail_filter = col_f3.selectbox("Cliente", clientes_disponibles, key="cliente_detail")
+            
+            # Aplicar filtros
+            df_filtered = df_data.copy()
+            if cat_filter != "Todas":
+                df_filtered = df_filtered[df_filtered["categoria"] == cat_filter]
+            if periodo_filter != "Todos":
+                df_filtered = df_filtered[df_filtered["periodo"] == periodo_filter]
+            if cliente_detail_filter != "Todos":
+                df_filtered = df_filtered[df_filtered["cliente"] == cliente_detail_filter]
+            
+            # Mostrar detalle
+            if not df_filtered.empty:
+                df_detail_display = df_filtered[["periodo", "cliente", "categoria", "cuenta", "descripcion", "importe"]].copy()
+                df_detail_display = df_detail_display.sort_values(["periodo", "categoria", "importe"], ascending=[True, True, False])
+                df_detail_display["importe"] = df_detail_display["importe"].round(2)
                 
-                # Filtros para detalle
-                col_f1, col_f2, col_f3 = st.columns(3)
+                st.dataframe(df_detail_display, use_container_width=True, height=400)
                 
-                categorias_disponibles = ["Todas"] + sorted(df_data["categoria"].unique().tolist())
-                cat_filter = col_f1.selectbox("Categoría", categorias_disponibles, key="cat_detail")
+                # Resumen por categoría
+                resumen_cat = df_filtered.groupby("categoria")["importe"].sum().reset_index().sort_values("importe")
                 
-                periodos_disponibles = ["Todos"] + sorted(df_data["periodo"].unique().tolist())
-                periodo_filter = col_f2.selectbox("Período", periodos_disponibles, key="periodo_detail")
-                
-                clientes_disponibles = ["Todos"] + sorted(df_data["cliente"].unique().tolist())
-                cliente_detail_filter = col_f3.selectbox("Cliente", clientes_disponibles, key="cliente_detail")
-                
-                # Aplicar filtros
-                df_filtered = df_data.copy()
-                if cat_filter != "Todas":
-                    df_filtered = df_filtered[df_filtered["categoria"] == cat_filter]
-                if periodo_filter != "Todos":
-                    df_filtered = df_filtered[df_filtered["periodo"] == periodo_filter]
-                if cliente_detail_filter != "Todos":
-                    df_filtered = df_filtered[df_filtered["cliente"] == cliente_detail_filter]
-                
-                # Mostrar detalle
-                if not df_filtered.empty:
-                    df_detail_display = df_filtered[["periodo", "cliente", "categoria", "cuenta", "descripcion", "importe"]].copy()
-                    df_detail_display = df_detail_display.sort_values(["periodo", "categoria", "importe"], ascending=[True, True, False])
-                    df_detail_display["importe"] = df_detail_display["importe"].round(2)
-                    
-                    st.dataframe(df_detail_display, use_container_width=True, height=400)
-                    
-                    # Resumen por categoría
-                    resumen_cat = df_filtered.groupby("categoria")["importe"].sum().reset_index().sort_values("importe")
-                    
-                    if len(resumen_cat) > 0:
-                        chart_cat = (
-                            alt.Chart(resumen_cat)
-                            .mark_bar()
-                            .encode(
-                                x=alt.X("importe:Q", title="Importe ($)"),
-                                y=alt.Y("categoria:N", sort="-x", title="Categoría"),
-                                color=alt.condition(
-                                    alt.datum.importe > 0,
-                                    alt.value("steelblue"),
-                                    alt.value("orange")
-                                )
+                if len(resumen_cat) > 0:
+                    chart_cat = (
+                        alt.Chart(resumen_cat)
+                        .mark_bar()
+                        .encode(
+                            x=alt.X("importe:Q", title="Importe ($)"),
+                            y=alt.Y("categoria:N", sort="-x", title="Categoría"),
+                            color=alt.condition(
+                                alt.datum.importe > 0,
+                                alt.value("steelblue"),
+                                alt.value("orange")
                             )
-                            .properties(height=300)
                         )
-                        st.altair_chart(chart_cat, use_container_width=True)
-                else:
-                    st.info("No hay datos que coincidan con los filtros seleccionados.")
+                        .properties(height=300)
+                    )
+                    st.altair_chart(chart_cat, use_container_width=True)
+            else:
+                st.info("No hay datos que coincidan con los filtros seleccionados.")
+        
+        # Información de debug
+        with st.expander("🔧 Información de Debug"):
+            st.write("**Parámetros de consulta:**")
+            st.write(f"- Período: {fecha_inicio_pl} a {fecha_fin_pl}")
+            st.write(f"- Cliente seleccionado: {cliente_pl}")
+            st.write(f"- Usar libro diario: {usar_libro_diario}")
             
-            # Información de debug
-            with st.expander("🔧 Información de Debug"):
-                st.write("**Parámetros de consulta:**")
-                st.write(f"- Período: {fecha_inicio_pl} a {fecha_fin_pl}")
-                st.write(f"- Cliente seleccionado: {cliente_pl}")
-                st.write(f"- Usar libro diario: {usar_libro_diario}")
-                
-                st.write("**Datos procesados:**")
-                st.write(f"- Total registros: {len(df_data)}")
-                st.write(f"- Períodos únicos: {sorted(df_data['periodo'].unique())}")
-                st.write(f"- Categorías únicas: {sorted(df_data['categoria'].unique())}")
-                st.write(f"- Clientes únicos: {sorted(df_data['cliente'].unique())}")
-                
-                if st.checkbox("Mostrar datos raw"):
-                    st.dataframe(df_data.head(50))
-        else:
-            st.warning("⚠️ No hay datos consolidados disponibles.")
+            st.write("**Datos procesados:**")
+            st.write(f"- Total registros: {len(df_data)}")
+            st.write(f"- Períodos únicos: {sorted(df_data['periodo'].unique())}")
+            st.write(f"- Categorías únicas: {sorted(df_data['categoria'].unique())}")
+            st.write(f"- Clientes únicos: {sorted(df_data['cliente'].unique())}")
+            
+            if st.checkbox("Mostrar datos raw"):
+                st.dataframe(df_data.head(50))
     else:
-        st.info("👆 Usa los filtros del sidebar y presiona 'Actualizar P&L' para cargar los datos.")
+        st.warning("⚠️ No hay datos consolidados disponibles.")
+else:
+    st.info("👆 Usa los filtros del sidebar y presiona 'Actualizar P&L' para cargar los datos.")
 
 # ====== FIN DEL CÓDIGO ======
 
