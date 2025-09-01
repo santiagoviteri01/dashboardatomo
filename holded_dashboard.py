@@ -382,7 +382,9 @@ with tab2:
         cliente_sel = st.selectbox(
             "🧍‍♂️ Selecciona Cliente",
             opciones_cliente,
-            index=opciones_cliente.index(st.session_state.get("cliente", "Todos"))
+            index=opciones_cliente.index(st.session_state.get("cliente", "Todos")),
+            key="tab2_cliente_select"
+            
         )
 
         filtros_btn = st.form_submit_button("🔄 Actualizar")
