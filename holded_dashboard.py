@@ -937,15 +937,45 @@ with tab3:
         st.sidebar.error("La fecha de inicio no puede ser posterior a la fecha de fin.")
         st.stop()
     
-    # Filtro de cliente (simulado - adaptar según tu estructura)
-    clientes_pl = ["Todos", "Cliente A", "Cliente B", "Cliente C"]  # Cambiar por tu lógica
+# 🔑 Cargar clientes dinámicamente desde invoices + purchases + libro diario
+df_invoices_for_clients = list_documents_corrected(
+    "invoice",
+    datetime.combine(fecha_inicio_pl, datetime.min.time()),
+    datetime.combine(fecha_fin_pl, datetime.max.time())
+)
+df_purchases_for_clients = list_documents_corrected(
+    "purchase",
+    datetime.combine(fecha_inicio_pl, datetime.min.time()),
+    datetime.combine(fecha_fin_pl, datetime.max.time())
+)
+
+clientes_invoices = df_invoices_for_clients["contactName"].dropna().unique().tolist() if not df_invoices_for_clients.empty else []
+clientes_purchases = df_purchases_for_clients["contactName"].dropna().unique().tolist() if not df_purchases_for_clients.empty else []
+
+# 🆕 Añadir clientes detectados en el libro diario
+ledger_entries_for_clients = list_daily_ledger_corrected(
+    datetime.combine(fecha_inicio_pl, datetime.min.time()),
+    datetime.combine(fecha_fin_pl, datetime.max.time())
+)
+
+clientes_ledger = []
+for entry in ledger_entries_for_clients:
+    cliente = entry.get("contactName") or entry.get("thirdParty") or entry.get("customer")
+    if cliente:
+        clientes_ledger.append(cliente)
+    else:
+        clientes_ledger.append("Libro Diario (sin cliente)")
+
+    clientes_unicos = sorted(set(clientes_invoices + clientes_purchases + clientes_ledger))
+    clientes_pl = ["Todos"] + clientes_unicos
+    
     if "pl_cliente_sel" not in st.session_state:
         st.session_state.pl_cliente_sel = "Todos"
-        
+    
     cliente_pl = st.sidebar.selectbox(
         "Cliente P&L",
         clientes_pl,
-        index=clientes_pl.index(st.session_state.pl_cliente_sel),
+        index=clientes_pl.index(st.session_state.pl_cliente_sel) if st.session_state.pl_cliente_sel in clientes_pl else 0,
         key="pl_cliente_input"
     )
     
@@ -1109,10 +1139,16 @@ with tab3:
                         categoria = classify_account_corrected(account_code, account_name)
                         periodo = fecha.to_period("M").strftime("%Y-%m")
                         
+                        cliente_entry = entry.get("contactName") or entry.get("thirdParty") or entry.get("customer") or "Libro Diario (sin cliente)"
+                        
+                        # Aplicar filtro de cliente si no es "Todos"
+                        if cliente_pl != "Todos" and cliente_entry != cliente_pl:
+                            continue
+                        
                         diario_data.append({
                             "periodo": periodo,
                             "fecha": fecha,
-                            "cliente": "Libro Diario",
+                            "cliente": cliente_entry,
                             "categoria": categoria,
                             "importe": amount,
                             "cuenta": account_code,
