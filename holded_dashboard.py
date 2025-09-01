@@ -275,7 +275,11 @@ with tab1:
     # 🎯 Filtro por cliente
     clientes_disponibles = sorted(df_completo["cliente_final"].dropna().unique())
     clientes_unicos_1=["Todos"] + clientes_disponibles
-    filtro_cliente = st.sidebar.selectbox("Cliente específico", clientes_unicos_1, key="tab_cliente_pl")
+    filtro_cliente = st.sidebar.selectbox(
+        "Cliente (Tab 1)",
+        clientes_unicos_1,
+        key="tab1_cliente_select"
+    )
     if filtro_cliente != "Todos":
         df_completo = df_completo[df_completo["cliente_final"] == filtro_cliente]
     
@@ -976,7 +980,10 @@ for entry in ledger_entries_for_clients:
         st.session_state.pl_cliente_sel = "Todo"
     col1, =st.columns([1])
     cliente_pl = col1.selectbox(
-        "Cliente", clientes_pl_3,index=0, key="tab_clientes"
+        "Cliente (Tab 3)",
+        clientes_pl_3,
+        index=0,
+        key="tab3_cliente_select"
     )
 
     
