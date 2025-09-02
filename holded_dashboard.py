@@ -872,23 +872,16 @@ with tab3:
 
     # ====== PARSERS / NORMALIZADORES ======
     def _line_amount_fallback(ln: dict) -> float:
-        # Prioridades típicas de Holded para líneas
-        for k in ("subTotal", "subtotal", "untaxedAmount", "netAmount", "base", "amount", "total"):
+        for k in ("subTotal","subtotal","untaxedAmount","netAmount","base","amount","total"):
             v = ln.get(k)
             if v is not None:
-                try:
-                    return float(v)
-                except Exception:
-                    pass
-        # Si no vienen totales de línea: unitario x cantidad
+                try: return float(v)
+                except: pass
         qty = ln.get("quantity") or ln.get("qty") or 1
         price = (ln.get("unitPrice") or ln.get("price") or ln.get("unitprice") or
                  ln.get("unit_cost") or ln.get("unitCost") or 0)
-        try:
-            return float(qty) * float(price)
-        except Exception:
-            return 0.0
-
+        try: return float(qty) * float(price)
+        except: return 0.0
     def parse_purchase_lines_corrected(doc_json: dict):
         """Extrae líneas de compra robustamente."""
         lines = []
@@ -1044,6 +1037,77 @@ with tab3:
                 st.success(f"✅ Procesadas {len(ingresos_data)} facturas de venta")
 
                 # 2) COMPRAS (purchase + bill + expense)
+                # --- 🔎 SONDEO DE ENDPOINTS DE COMPRAS (pegar antes de usar df_purchases) ---
+
+                @st.cache_data(ttl=60)
+                def _try_get(url, headers, params):
+                    try:
+                        r = requests.get(url, headers=headers, params=params, timeout=30)
+                        return r.status_code, (r.json() if r.headers.get("content-type","").startswith("application/json") else None), r.text[:200]
+                    except Exception as e:
+                        return -1, None, str(e)
+                
+                @st.cache_data(ttl=60)
+                def probe_purchases_endpoints(start_dt: datetime, end_dt: datetime, page_size=200):
+                    """
+                    Prueba múltiples variantes de compras y distintos parámetros de fecha.
+                    Devuelve: (best_kind, best_df, debug_rows)
+                    """
+                    headers = {"accept": "application/json", "key": get_holded_token()}
+                    base = "https://api.holded.com/api/invoicing/v1"
+                
+                    # Candidatos de ruta (lista de (kind, path))
+                    route_candidates = [
+                        ("purchase", f"{base}/documents/purchase"),
+                        ("bill",     f"{base}/documents/bill"),
+                        ("expense",  f"{base}/documents/expense"),
+                        # Por si la API usa plurales en algunos tenants:
+                        ("bills",    f"{base}/documents/bills"),
+                        ("expenses", f"{base}/documents/expenses"),
+                        # Por si existiera un recurso directo (algunos tenants antiguos):
+                        ("purchases", f"{base}/purchases"),
+                    ]
+                
+                    # Candidatos de filtros de fecha
+                    date_params_candidates = [
+                        {"starttmp": int(start_dt.timestamp()), "endtmp": int(end_dt.timestamp())},
+                        {"dateFrom": start_dt.strftime("%Y-%m-%d"), "dateTo": end_dt.strftime("%Y-%m-%d")},
+                        {"from": start_dt.strftime("%Y-%m-%d"), "to": end_dt.strftime("%Y-%m-%d")},
+                        # Último recurso: sin filtros (y filtramos local si toca)
+                        {},
+                    ]
+                
+                    debug_rows = []
+                    best = ("", pd.DataFrame(), 0, {}, "")  # (kind, df, n_rows, params, url)
+                    for kind, url in route_candidates:
+                        for date_params in date_params_candidates:
+                            params = {"sort": "created-asc", "limit": page_size} | date_params
+                            code, js, preview = _try_get(url, headers, params)
+                            n = len(js) if isinstance(js, list) else 0
+                            debug_rows.append({
+                                "kind": kind, "url": url, "status": code, "params": date_params, "n": n, "preview": preview
+                            })
+                            if n > best[2]:
+                                df = pd.DataFrame(js) if isinstance(js, list) else pd.DataFrame()
+                                best = (kind, df, n, date_params, url)
+                
+                    return best[0], best[1], pd.DataFrame(debug_rows).sort_values("n", ascending=False).head(20)
+                
+                # === úsalo antes de armar df_purchases ===
+                best_kind, best_df, probe_table = probe_purchases_endpoints(inicio_dt, fin_dt)
+                
+                with st.expander("🔧 Debug de búsqueda de compras"):
+                    st.write("Mejor endpoint encontrado:", best_kind)
+                    st.dataframe(probe_table, use_container_width=True)
+                    if not best_df.empty:
+                        st.write("Muestra de 5 docs:")
+                        st.dataframe(best_df.head(5))
+                
+                # Si no encontró nada, seguimos con DF vacío
+                df_purchases = best_df.copy()
+                # Guardamos el 'kind' ganador en sesión para usarlo al pedir el detalle:
+                st.session_state.setdefault("best_purchase_kind", best_kind or "purchase")
+
                 st.info("📤 Cargando compras (purchase/bill/expense)...")
                 df_purchases = list_purchases_any(inicio_dt, fin_dt)
 
@@ -1053,7 +1117,7 @@ with tab3:
                     for idx, (_, pur) in enumerate(df_purchases.iterrows()):
                         progress_bar.progress((idx + 1) / len(df_purchases))
                         pur_id = str(pur.get("id", "") or "")
-                        pur_kind = pur.get("__doc_kind__", "purchase")
+                        pur_kind = st.session_state.get("best_purchase_kind", "purchase")
                         detail = get_document_detail_corrected(pur_kind, pur_id) if pur_id else {}
                         lines = parse_purchase_lines_corrected(detail) if detail else []
                         for fecha, account_code, account_name, amount in lines:
