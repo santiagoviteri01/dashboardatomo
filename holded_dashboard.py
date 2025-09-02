@@ -7,6 +7,7 @@ from datetime import datetime
 from datetime import date
 import altair as alt
 import requests
+import re, unicodedata
 st.set_page_config(page_title="Dashboard de Márgenes", layout="wide")
 st.title("📊 Dashboard Interactivo Holded-Financiero")
 API_KEY = "fafbb8191b37e6b696f192e70b4a198c"
@@ -806,45 +807,75 @@ with tab3:
             return []
         
         return []
-
-    def classify_account_corrected(code: str, name: str = "") -> str:
-        """Clasificador de cuentas PGC mejorado"""
-        code = str(code).strip()
-        name = str(name).lower()
         
-        # Clasificación por código
-        if code.startswith("7"):
-            return "Ingresos"
-        elif code.startswith("60"):
-            return "Aprovisionamientos"
-        elif code.startswith("64"):
-            return "Gastos de personal"
-        elif code.startswith(("62", "63", "65")):
-            return "Otros gastos de explotación"
-        elif code.startswith("66"):
-            return "Gastos financieros"
+
+    def _strip_accents(s: str) -> str:
+        """Quita acentos y normaliza texto"""
+        s = str(s or "")
+        return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
+    
+    def _only_leading_digits(code: str) -> str:
+        """Extrae solo los dígitos iniciales de un código contable"""
+        code = str(code or "").strip().replace("\xa0", " ")
+        m = re.match(r"^([0-9]{2,})", code)
+        return m.group(1) if m else ""
+    
+    def extraer_codigo_nombre(texto: str):
+        """Separa '70500000 - Prestación de servicios...' en (codigo, nombre)"""
+        texto = str(texto or "").strip().replace("\xa0", " ")
+        m = re.match(r"^\s*([0-9]{2,})\s*[-–]?\s*(.*)$", texto)
+        if m:
+            return m.group(1), m.group(2).strip()
+        return "", texto
+    
+    # ===================== #
+    # Clasificador PGC       #
+    # ===================== #
+    
+    def classify_account_corrected(code: str, name: str = "") -> str:
+        """
+        Clasificador PGC:
+        - Limpia el código (toma solo los dígitos iniciales).
+        - Prioriza casos específicos (768/668) antes de los prefijos generales (76/66).
+        - Normaliza acentos en el nombre para las reglas por texto.
+        """
+        code = _only_leading_digits(code)
+        name_clean = _strip_accents(str(name or "").lower())
+    
+        # --- Reglas por código ---
+        if code.startswith("768") or code.startswith("668"):
+            return "Diferencias de cambio"
         elif code.startswith("76"):
             return "Ingresos financieros"
-        elif code.startswith("768"):
-            return "Diferencias de cambio"
-        elif code.startswith("668"):
-            return "Diferencias de cambio"
-        elif code.startswith(("77")):
+        elif code.startswith("66"):
+            return "Gastos financieros"
+        elif code.startswith("64"):
+            return "Gastos de personal"
+        elif code.startswith(("60", "61")):
+            return "Aprovisionamientos"
+        elif code.startswith(("62", "63", "65")):
+            return "Otros gastos de explotación"
+        elif code.startswith("77"):
             return "Otros resultados"
+        elif code.startswith(("70", "71", "72", "73", "74", "75")):
+            return "Ingresos"
+        elif code.startswith("7"):
+            return "Ingresos"
         elif code.startswith("6"):
             return "Otros gastos de explotación"
-        
-        # Clasificación por nombre
-        if any(word in name for word in ["nomina", "sueldo", "salario", "personal", "seguridad social"]):
+    
+        # --- Reglas por nombre ---
+        if any(w in name_clean for w in ["nomina", "sueldo", "salario", "personal", "seguridad social"]):
             return "Gastos de personal"
-        elif any(word in name for word in ["interes", "financiero", "prestamo", "credito"]):
+        if any(w in name_clean for w in ["interes", "financiero", "prestamo", "credito"]):
             return "Gastos financieros"
-        elif "cambio" in name or "divisa" in name:
+        if ("cambio" in name_clean) or ("divisa" in name_clean):
             return "Diferencias de cambio"
-        elif any(word in name for word in ["compra", "suministro", "materia prima"]):
+        if any(w in name_clean for w in ["compra", "suministro", "materia prima"]):
             return "Aprovisionamientos"
-        
+    
         return "Otros gastos de explotación"
+
 
     def parse_purchase_lines_corrected(doc_json: dict):
         """Extrae líneas de compra con mejor manejo de datos"""
