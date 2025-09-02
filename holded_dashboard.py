@@ -64,6 +64,37 @@ def get_document_detail(doc_type: str, doc_id: str):
     return r.json() if r.status_code == 200 else None
 
 @st.cache_data(ttl=60)
+def get_document_detail_corrected(doc_type: str, doc_id: str):
+    """
+    Trae el detalle de un documento de Holded.
+    Fallback: si el doc_type falla, intenta con 'purchase'.
+    """
+    if not doc_id:
+        return {}
+    headers = {"accept": "application/json", "key": get_holded_token()}
+
+    # 1) Intento con el tipo indicado
+    url = f"https://api.holded.com/api/invoicing/v1/documents/{doc_type}/{doc_id}"
+    try:
+        r = requests.get(url, headers=headers, timeout=30)
+        if r.status_code == 200:
+            return r.json()
+    except Exception:
+        pass
+
+    # 2) Fallback con 'purchase' (tu tenant confirmó gastos en purchase)
+    if doc_type != "purchase":
+        try:
+            url2 = f"https://api.holded.com/api/invoicing/v1/documents/purchase/{doc_id}"
+            r2 = requests.get(url2, headers=headers, timeout=30)
+            if r2.status_code == 200:
+                return r2.json()
+        except Exception:
+            pass
+
+    return {}
+    
+@st.cache_data(ttl=60)
 def list_chart_of_accounts():
     """Plan de cuentas de Holded (si tienes contabilidad activa)."""
     url = f"{BASE_ACC}/chartofaccounts"
