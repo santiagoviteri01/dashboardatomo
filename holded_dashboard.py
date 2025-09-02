@@ -741,43 +741,50 @@ with tab3:
             return pd.DataFrame()
 
     @st.cache_data(ttl=60)
-    def list_purchases_any(start_dt: datetime, end_dt: datetime, page_size=200):
-        """Trae compras intentando en /purchase, /bill y /expense y concatena."""
+    def list_purchases_any(start_dt: datetime, end_dt: datetime, page_size=500):
+        """Descarga todas las compras (endpoint purchase) y filtra por fecha local."""
         headers = {"accept": "application/json", "key": get_holded_token()}
-        base = "https://api.holded.com/api/invoicing/v1/documents"
-        params = {
-            "starttmp": int(start_dt.timestamp()),
-            "endtmp": int(end_dt.timestamp()),
-            "sort": "created-asc",
-            "limit": page_size
-        }
+        url = "https://api.holded.com/api/invoicing/v1/documents/purchase"
+        
         out = []
-        for kind in ("purchase", "bill", "expense"):
+        page = 1
+        while True:
+            r = requests.get(url, headers=headers, params={"page": page, "limit": page_size}, timeout=30)
+            if r.status_code != 200:
+                break
+            data = r.json()
+            if not data:
+                break
+            out.extend(data)
+            if len(data) < page_size:
+                break
+            page += 1
+        
+        if not out:
+            return pd.DataFrame()
+        
+        df = pd.DataFrame(out)
+        
+        # Filtrar localmente por fecha
+        if "date" in df.columns:
+            df["_date"] = pd.to_datetime(df["date"], unit="s", errors="coerce")
+            mask = (df["_date"] >= pd.to_datetime(start_dt)) & (df["_date"] <= pd.to_datetime(end_dt))
+            df = df[mask].copy()
+        
+        return df
+        @st.cache_data(ttl=60)
+        def get_document_detail_corrected(doc_type: str, doc_id: str):
+            """Obtiene detalle de documento específico"""
+            if not doc_id:
+                return {}
+            url = f"https://api.holded.com/api/invoicing/v1/documents/{doc_type}/{doc_id}"
+            headers = {"accept": "application/json", "key": get_holded_token()}
             try:
-                r = requests.get(f"{base}/{kind}", headers=headers, params=params, timeout=30)
-                if r.status_code == 200:
-                    data = r.json()
-                    if isinstance(data, list) and data:
-                        df = pd.DataFrame(data)
-                        df["__doc_kind__"] = kind
-                        out.append(df)
-            except Exception:
-                pass
-        return pd.concat(out, ignore_index=True) if out else pd.DataFrame()
-
-    @st.cache_data(ttl=60)
-    def get_document_detail_corrected(doc_type: str, doc_id: str):
-        """Obtiene detalle de documento específico"""
-        if not doc_id:
-            return {}
-        url = f"https://api.holded.com/api/invoicing/v1/documents/{doc_type}/{doc_id}"
-        headers = {"accept": "application/json", "key": get_holded_token()}
-        try:
-            r = requests.get(url, headers=headers, timeout=30)
-            return r.json() if r.status_code == 200 else {}
-        except Exception as e:
-            st.warning(f"Error obteniendo detalle de {doc_id}: {e}")
-            return {}
+                r = requests.get(url, headers=headers, timeout=30)
+                return r.json() if r.status_code == 200 else {}
+            except Exception as e:
+                st.warning(f"Error obteniendo detalle de {doc_id}: {e}")
+                return {}
 
     @st.cache_data(ttl=60)
     def list_daily_ledger_corrected(start_dt: datetime, end_dt: datetime):
