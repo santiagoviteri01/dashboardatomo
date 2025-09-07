@@ -1480,515 +1480,485 @@ def process_expenses_corrected(start_dt: datetime, end_dt: datetime, cliente_fil
 
 # ====== TAB 3: P&L desde Holded - VERSION PARCHEADA ======
 # ====== TAB 3: P&L desde Holded - VERSION CORREGIDA COMPLETA ======
+# ====== TAB 3: P&L desde Holded - CÓDIGO COMPLETO FINAL ======
 with tab3:
     st.header("📑 P&L desde Holded (API)")
     st.caption("Calculado desde documentos de Holded y libro diario contable para mayor precisión.")
 
-    # ====== MAPEO ESPECÍFICO DE CUENTAS BASADO EN EL EXCEL ======
-    ACCOUNT_MAPPING = {
-        # APROVISIONAMIENTOS
-        "60700017": ("Aprovisionamientos", "Trabajos realizados por AD CONSULTING Bet593"),
-        
-        # GASTOS DE PERSONAL
-        "64000000": ("Gastos de personal", "Sueldos y salarios"),
-        "64100000": ("Gastos de personal", "Indemnizaciones"),
-        "64200000": ("Gastos de personal", "Seguridad Social a cargo de la empresa"),
-        "64900000": ("Gastos de personal", "Otros gastos sociales"),
-        
-        # OTROS GASTOS DE EXPLOTACIÓN - Servicios exteriores
-        "62100000": ("Otros gastos de explotación", "Alquiler vehículos"),
-        "62100001": ("Otros gastos de explotación", "Alquiler apartamentos turísticos"),
-        "62100002": ("Otros gastos de explotación", "Renting Lexus kinto ONe"),
-        "62200001": ("Otros gastos de explotación", "Mantenimiento Holded"),
-        "62200002": ("Otros gastos de explotación", "Hostings"),
-        "62300001": ("Otros gastos de explotación", "Servicios de profesionales - Sensus Consultoria"),
-        "62300002": ("Otros gastos de explotación", "Servicios de profesionales - Notarios Registros y FNMT"),
-        "62300004": ("Otros gastos de explotación", "Servicios de profesionales Abogados"),
-        "62300005": ("Otros gastos de explotación", "Servicios de profesionales Recruting"),
-        "62300008": ("Otros gastos de explotación", "Servicios profesionales JUNIOR CALZADILLA"),
-        "62300020": ("Otros gastos de explotación", "Servicios de profesionales TECHNOURCE"),
-        "62300021": ("Otros gastos de explotación", "Servicios de profesionales ITMA"),
-        "62300024": ("Otros gastos de explotación", "Servicios de profesionales Informaticos"),
-        "62400000": ("Otros gastos de explotación", "Transportes"),
-        "62500000": ("Otros gastos de explotación", "Primas de seguros"),
-        "62600001": ("Otros gastos de explotación", "Servicios bancarios CAIXABANK"),
-        "62600002": ("Otros gastos de explotación", "Servicios bancarios BBVA"),
-        "62600003": ("Otros gastos de explotación", "Servicios bancarios BINANCE"),
-        "62700000": ("Otros gastos de explotación", "Publicidad propaganda y relaciones públicas"),
-        "62900001": ("Otros gastos de explotación", "Software y Licencias"),
-        "62900002": ("Otros gastos de explotación", "Material oficina y consumibles"),
-        "62900003": ("Otros gastos de explotación", "GTOS VIAJES hotelesvuelosetc"),
-        "62900004": ("Otros gastos de explotación", "DIETAS"),
-        "62900005": ("Otros gastos de explotación", "DESPLAZAMIENTO Taxi peajes etc"),
-        "62900006": ("Otros gastos de explotación", "Gasoil"),
-        
-        # TRIBUTOS
-        "63100000": ("Otros gastos de explotación", "Otros tributos"),
-        
-        # OTROS RESULTADOS
-        "77800000": ("Otros resultados", "Ingresos excepcionales"),
-        "67800000": ("Otros resultados", "Gastos excepcionales"),
-        
-        # INGRESOS FINANCIEROS
-        "76900000": ("Ingresos financieros", "Otros ingresos financieros"),
-        
-        # GASTOS FINANCIEROS
-        "66230000": ("Gastos financieros", "Intereses de deudas con entidades de crédito"),
-        "66240000": ("Gastos financieros", "Intereses de deudas otras empresas"),
-        
-        # DIFERENCIAS DE CAMBIO
-        "66800000": ("Diferencias de cambio", "Diferencias negativas de cambio"),
-        "76800000": ("Diferencias de cambio", "Diferencias positivas de cambio"),
-        
-        # INGRESOS (principales cuentas del Excel)
-        "70500000": ("Ingresos", "Prestaciones de servicios (Licencia Internacional)"),
-        "70500002": ("Ingresos", "Prestación de servicios Descuento torneos BET593"),
-        "70500005": ("Ingresos", "Prestación de servicios Descuento torneos BET502"),
-        "70500006": ("Ingresos", "Prestación servicios BET502 - METRONIA"),
-        "70500008": ("Ingresos", "Prestación servicios BET593 - METRONIA"),
-        "70500009": ("Ingresos", "Prestación servicios BET593 - LOTTERY"),
-        "70500010": ("Ingresos", "Prestación servicios BET593 - OCTAVIAN SRL"),
-        "70500011": ("Ingresos", "Prestación servicios BET593 - VITAL GAMES PROJECT SLOT SRL"),
-        "70500013": ("Ingresos", "Prestación servicios BET593 - APOLLO SOFTSRO"),
-        "70500014": ("Ingresos", "Prestación servicios BET593 - PSM TECH Srl"),
-        "70500015": ("Ingresos", "Prestación servicios BET593 - SEVEN ABC SOLUTION CH"),
-        "70500016": ("Ingresos", "Prestación servicios BET593 - PROJEKT SERVICE SRL"),
-        "70500017": ("Ingresos", "Prestación servicios BET593 - MYMOON LTD"),
-        "70500018": ("Ingresos", "Prestación servicios BET593 - WORLDMATCHSRL"),
-        "70500019": ("Ingresos", "Prestación servicios BET593 - ARRISE SOLUTIONS LIMITED"),
-    }
-
-    # ====== FUNCIONES AUXILIARES PARA HOLDED API ======
-    import unicodedata, re
-
-    @st.cache_data(ttl=300)
-    def get_holded_token():
-        """Obtener token de autenticación de Holded"""
-        try:
-            token = "fafbb8191b37e6b696f192e70b4a198c"
-            return token
-        except Exception as e:
-            st.warning(f"Error obteniendo token de Holded: {e}.")
-            return None
-
+    # ====== FUNCIONES DE EXTRACCIÓN MEJORADAS ======
     @st.cache_data(ttl=60)
-    def list_documents_corrected(doc_type: str, start_dt: datetime, end_dt: datetime, page_size=200):
-        """Lista documentos con filtros de fecha corregidos"""
+    def get_documents_with_strict_filters(doc_type: str, start_dt: datetime, end_dt: datetime):
+        """Obtiene documentos con filtros de fecha ESTRICTOS y debugging"""
+        headers = {"accept": "application/json", "key": "fafbb8191b37e6b696f192e70b4a198c"}
         url = f"https://api.holded.com/api/invoicing/v1/documents/{doc_type}"
-        headers = {"accept": "application/json", "key": get_holded_token()}
+        
+        # Usar solo timestamp que sabemos que funciona
         params = {
             "starttmp": int(start_dt.timestamp()),
             "endtmp": int(end_dt.timestamp()),
-            "sort": "created-asc",
-            "limit": page_size
+            "limit": 1000,
+            "sort": "created-asc"
         }
+        
         try:
-            r = requests.get(url, headers=headers, params=params, timeout=30)
-            if r.status_code == 200:
-                data = r.json()
-                return pd.DataFrame(data) if isinstance(data, list) else pd.DataFrame()
-            else:
-                st.error(f"Error {r.status_code} en {doc_type}: {r.text[:300]}")
-                return pd.DataFrame()
+            response = requests.get(url, headers=headers, params=params, timeout=30)
+            if response.status_code == 200:
+                data = response.json()
+                if isinstance(data, list):
+                    # FILTRO ADICIONAL LOCAL para asegurar fechas correctas
+                    filtered_data = []
+                    for doc in data:
+                        doc_date = doc.get("date")
+                        if doc_date:
+                            try:
+                                if isinstance(doc_date, (int, float)):
+                                    parsed_date = pd.to_datetime(doc_date, unit='s')
+                                else:
+                                    parsed_date = pd.to_datetime(doc_date)
+                                
+                                # VERIFICAR ESTRICTAMENTE que esté en el rango
+                                if start_dt <= parsed_date <= end_dt:
+                                    filtered_data.append(doc)
+                            except:
+                                continue
+                    
+                    st.info(f"📄 {doc_type}: {len(filtered_data)} documentos en período correcto")
+                    return filtered_data
+                
+            return []
         except Exception as e:
-            st.error(f"Error conectando con Holded ({doc_type}): {e}")
-            return pd.DataFrame()
+            st.error(f"Error obteniendo {doc_type}: {str(e)}")
+            return []
 
     @st.cache_data(ttl=60)
-    def get_document_detail_corrected(doc_type: str, doc_id: str):
-        """
-        Trae el detalle de un documento de Holded.
-        Fallback: si el doc_type falla, intenta con 'purchase'.
-        """
-        if not doc_id:
-            return {}
-        headers = {"accept": "application/json", "key": get_holded_token()}
-
-        # 1) Intento con el tipo indicado
-        url = f"https://api.holded.com/api/invoicing/v1/documents/{doc_type}/{doc_id}"
-        try:
-            r = requests.get(url, headers=headers, timeout=30)
-            if r.status_code == 200:
-                return r.json()
-        except Exception:
-            pass
-
-        # 2) Fallback con 'purchase'
-        if doc_type != "purchase":
-            try:
-                url2 = f"https://api.holded.com/api/invoicing/v1/documents/purchase/{doc_id}"
-                r2 = requests.get(url2, headers=headers, timeout=30)
-                if r2.status_code == 200:
-                    return r2.json()
-            except Exception:
-                pass
-
-        return {}
-
-    @st.cache_data(ttl=60)
-    def list_daily_ledger_corrected(start_dt: datetime, end_dt: datetime):
-        """Obtiene libro diario con filtros de fecha mejorados"""
+    def get_ledger_with_debugging(start_dt: datetime, end_dt: datetime):
+        """Obtiene libro diario con debugging detallado"""
+        headers = {"accept": "application/json", "key": "fafbb8191b37e6b696f192e70b4a198c"}
         url = "https://api.holded.com/api/accounting/v1/dailyledger"
-        headers = {"accept": "application/json", "key": get_holded_token()}
-        date_formats = [
+        
+        st.info("🔍 Intentando obtener libro diario...")
+        
+        # Múltiples intentos con diferentes formatos
+        attempts = [
+            {"starttmp": int(start_dt.timestamp()), "endtmp": int(end_dt.timestamp())},
             {"from": start_dt.strftime("%Y-%m-%d"), "to": end_dt.strftime("%Y-%m-%d")},
             {"dateFrom": start_dt.strftime("%Y-%m-%d"), "dateTo": end_dt.strftime("%Y-%m-%d")},
-            {"starttmp": int(start_dt.timestamp()), "endtmp": int(end_dt.timestamp())},
+            {"limit": 10000}  # Sin filtros, traer todo
         ]
-        for params in date_formats:
+        
+        for i, params in enumerate(attempts):
             try:
-                r = requests.get(url, headers=headers, params=params, timeout=30)
-                if r.status_code == 200:
-                    data = r.json()
+                response = requests.get(url, headers=headers, params=params, timeout=30)
+                if response.status_code == 200:
+                    data = response.json()
                     if data:
+                        st.success(f"✅ Libro diario obtenido con método {i+1}: {len(data)} entradas")
+                        
+                        # FILTRO LOCAL ESTRICTO por fechas
+                        if i == 3:  # Si es el intento sin filtros
+                            filtered_data = []
+                            for entry in data:
+                                entry_date = entry.get("date")
+                                try:
+                                    if isinstance(entry_date, (int, float)):
+                                        parsed_date = pd.to_datetime(entry_date, unit='s')
+                                    else:
+                                        parsed_date = pd.to_datetime(entry_date)
+                                    
+                                    if start_dt <= parsed_date <= end_dt:
+                                        filtered_data.append(entry)
+                                except:
+                                    continue
+                            
+                            st.info(f"📅 Filtrado local: {len(filtered_data)} entradas en período correcto")
+                            return filtered_data
+                        
                         return data
-            except Exception:
+            except Exception as e:
+                st.warning(f"Intento {i+1} falló: {str(e)}")
                 continue
-        # Fallback: traer todo y filtrar local
-        try:
-            r = requests.get(url, headers=headers, timeout=30)
-            if r.status_code == 200:
-                data = r.json()
-                out = []
-                for d in data:
-                    dt = d.get("date")
-                    try:
-                        dtp = pd.to_datetime(dt, unit="s") if isinstance(dt, (int, float)) else pd.to_datetime(dt)
-                    except Exception:
-                        continue
-                    if start_dt <= dtp <= end_dt:
-                        out.append(d)
-                return out
-        except Exception as e:
-            st.warning(f"Error obteniendo libro diario: {e}")
+        
+        st.warning("⚠️ No se pudo obtener libro diario")
         return []
 
-    # ====== CLASIFICADOR MEJORADO CON MAPEO ESPECÍFICO ======
-    def classify_account_with_mapping(code: str, name: str = "") -> tuple:
-        """
-        Clasifica cuenta usando primero el mapeo específico, luego reglas generales.
-        Retorna: (categoria, descripcion_completa)
-        """
-        # Limpiar código
-        code_clean = str(code or "").strip().replace(" ", "")
+    # ====== CLASIFICADOR SIMPLIFICADO Y ROBUSTO ======
+    def classify_account_robust(account_code: str, account_name: str = "", provider: str = "", amount: float = 0, endpoint: str = "") -> tuple:
+        """Clasificador simplificado y robusto que evita errores de clasificación masivos"""
+        code = str(account_code or "").strip()
+        name = str(account_name or "").lower()
+        provider_clean = str(provider or "").lower()
         
-        # 1. Buscar en mapeo específico primero
-        if code_clean in ACCOUNT_MAPPING:
-            categoria, descripcion = ACCOUNT_MAPPING[code_clean]
-            return categoria, f"{code_clean} - {descripcion}"
-        
-        # 2. Reglas generales por prefijo
-        name_clean = str(name or "").lower()
-        
-        # Extraer solo dígitos iniciales
-        digits = re.match(r'^(\d{2,})', code_clean)
-        code_num = digits.group(1) if digits else ""
-        
-        if code_num.startswith("768") or code_num.startswith("668"):
-            return "Diferencias de cambio", f"{code_clean} - {name}"
-        elif code_num.startswith("76"):
-            return "Ingresos financieros", f"{code_clean} - {name}"
-        elif code_num.startswith("66"):
-            return "Gastos financieros", f"{code_clean} - {name}"
-        elif code_num.startswith("64"):
-            return "Gastos de personal", f"{code_clean} - {name}"
-        elif code_num.startswith(("60", "61")):
-            return "Aprovisionamientos", f"{code_clean} - {name}"
-        elif code_num.startswith(("62", "63", "65", "68", "69")):
-            return "Otros gastos de explotación", f"{code_clean} - {name}"
-        elif code_num.startswith("77"):
-            return "Otros resultados", f"{code_clean} - {name}"
-        elif code_num.startswith(("70", "71", "72", "73", "74", "75")):
-            return "Ingresos", f"{code_clean} - {name}"
-        elif code_num.startswith("7"):
-            return "Ingresos", f"{code_clean} - {name}"
-        elif code_num.startswith("6"):
-            return "Otros gastos de explotación", f"{code_clean} - {name}"
-        
-        # 3. Fallback por nombre
-        if any(w in name_clean for w in ["nomina", "sueldo", "salario", "personal", "seguridad social"]):
-            return "Gastos de personal", f"{code_clean} - {name}"
-        elif any(w in name_clean for w in ["interes", "financiero", "prestamo", "credito"]):
-            return "Gastos financieros", f"{code_clean} - {name}"
-        elif "cambio" in name_clean or "divisa" in name_clean:
-            return "Diferencias de cambio", f"{code_clean} - {name}"
-        elif any(w in name_clean for w in ["compra", "suministro", "materia prima"]):
-            return "Aprovisionamientos", f"{code_clean} - {name}"
-        
-        return "Otros gastos de explotación", f"{code_clean} - {name or 'Sin descripción'}"
-
-    # ====== BUSCADOR COMPLETO DE GASTOS ======
-    @st.cache_data(ttl=60)
-    def get_comprehensive_expenses(start_dt: datetime, end_dt: datetime):
-        """
-        Búsqueda exhaustiva de gastos en todos los endpoints posibles
-        """
-        headers = {"accept": "application/json", "key": get_holded_token()}
-        all_expenses = []
-        
-        # Endpoints a probar para gastos
-        expense_endpoints = [
-            "purchase", "bill", "expense", "receipt", 
-            "purchaseorder", "creditnote"
-        ]
-        
-        for endpoint in expense_endpoints:
-            try:
-                st.info(f"🔍 Buscando gastos en: {endpoint}")
-                url = f"https://api.holded.com/api/invoicing/v1/documents/{endpoint}"
-                
-                # Diferentes formatos de filtros de fecha
-                date_filters = [
-                    {"starttmp": int(start_dt.timestamp()), "endtmp": int(end_dt.timestamp())},
-                    {"dateFrom": start_dt.strftime("%Y-%m-%d"), "dateTo": end_dt.strftime("%Y-%m-%d")},
-                    {"from": start_dt.strftime("%Y-%m-%d"), "to": end_dt.strftime("%Y-%m-%d")},
-                    {}  # Sin filtros
-                ]
-                
-                found_data = False
-                for date_filter in date_filters:
-                    params = {"limit": 500, "sort": "created-asc", **date_filter}
-                    
-                    try:
-                        response = requests.get(url, headers=headers, params=params, timeout=30)
-                        if response.status_code == 200:
-                            data = response.json()
-                            if isinstance(data, list) and data:
-                                # Filtrar por fecha si no se usaron filtros
-                                if not date_filter:
-                                    filtered_data = []
-                                    for doc in data:
-                                        doc_date = doc.get("date")
-                                        if doc_date:
-                                            try:
-                                                if isinstance(doc_date, (int, float)):
-                                                    parsed_date = pd.to_datetime(doc_date, unit='s')
-                                                else:
-                                                    parsed_date = pd.to_datetime(doc_date)
-                                                
-                                                if start_dt <= parsed_date <= end_dt:
-                                                    filtered_data.append(doc)
-                                            except:
-                                                continue
-                                    data = filtered_data
-                                
-                                if data:
-                                    st.success(f"✅ {endpoint}: {len(data)} documentos")
-                                    all_expenses.extend([(endpoint, doc) for doc in data])
-                                    found_data = True
-                                    break
-                    except Exception as e:
-                        continue
-                        
-                if not found_data:
-                    st.warning(f"⚠️ No se encontraron datos en {endpoint}")
-                    
-            except Exception as e:
-                st.error(f"❌ Error en {endpoint}: {str(e)}")
-        
-        return all_expenses
-
-    # ====== PARSER MEJORADO DE LÍNEAS DE DOCUMENTOS ======
-    def parse_document_lines_enhanced(endpoint_type: str, doc_json: dict):
-        """
-        Parser mejorado que maneja diferentes estructuras de documentos
-        """
-        lines = []
-        if not doc_json:
-            return lines
+        # MAPEO ESPECÍFICO Y ESTRICTO
+        specific_mapping = {
+            "60700017": ("Aprovisionamientos", "AD CONSULTING Bet593"),
             
-        # Obtener fecha del documento
-        raw_date = doc_json.get("date")
-        if isinstance(raw_date, (int, float)):
-            fecha = pd.to_datetime(raw_date, unit='s', errors='coerce')
+            # GASTOS DE PERSONAL (64X)
+            "64000000": ("Gastos de personal", "Sueldos y salarios"),
+            "64100000": ("Gastos de personal", "Indemnizaciones"),
+            "64200000": ("Gastos de personal", "Seguridad Social"),
+            "64900000": ("Gastos de personal", "Otros gastos sociales"),
+            
+            # SERVICIOS EXTERIORES (62X)
+            "62100001": ("Otros gastos de explotación", "Alquiler apartamentos turísticos"),
+            "62100002": ("Otros gastos de explotación", "Renting Lexus"),
+            "62200001": ("Otros gastos de explotación", "Mantenimiento Holded"),
+            "62200002": ("Otros gastos de explotación", "Hostings"),
+            "62300004": ("Otros gastos de explotación", "Servicios profesionales Abogados"),
+            "62300020": ("Otros gastos de explotación", "Servicios TECHNOURCE"),
+            "62300021": ("Otros gastos de explotación", "Servicios ITMA"),
+            "62600001": ("Otros gastos de explotación", "Servicios bancarios CAIXABANK"),
+            "62600002": ("Otros gastos de explotación", "Servicios bancarios BBVA"),
+            "62700000": ("Otros gastos de explotación", "Publicidad propaganda"),
+            "62900001": ("Otros gastos de explotación", "Software y Licencias"),
+            "62900003": ("Otros gastos de explotación", "Viajes hoteles vuelos"),
+            
+            # GASTOS FINANCIEROS (66X)
+            "66230000": ("Gastos financieros", "Intereses de crédito"),
+            "66240000": ("Gastos financieros", "Intereses otras empresas"),
+            
+            # DIFERENCIAS DE CAMBIO
+            "66800000": ("Diferencias de cambio", "Diferencias negativas"),
+            "76800000": ("Diferencias de cambio", "Diferencias positivas"),
+            
+            # INGRESOS FINANCIEROS (76X)
+            "76900000": ("Ingresos financieros", "Otros ingresos financieros"),
+            
+            # OTROS RESULTADOS
+            "77800000": ("Otros resultados", "Ingresos excepcionales"),
+            "67800000": ("Otros resultados", "Gastos excepcionales"),
+            
+            # INGRESOS (70X)
+            "70500000": ("Ingresos", "Prestaciones de servicios"),
+        }
+        
+        # 1. PRIORIDAD 1: Mapeo específico exacto
+        if code in specific_mapping:
+            categoria, desc = specific_mapping[code]
+            return categoria, f"{code} - {desc}"
+        
+        # 2. PRIORIDAD 2: Clasificación por prefijo ESTRICTA
+        if len(code) >= 3:
+            prefix = code[:3]
+            
+            # GASTOS DE PERSONAL
+            if prefix == "640" or prefix == "641" or prefix == "642" or prefix == "649":
+                return "Gastos de personal", f"{code} - Gastos de personal"
+            
+            # APROVISIONAMIENTOS (SOLO 607)
+            elif prefix == "607":
+                return "Aprovisionamientos", f"{code} - Trabajos externos"
+            
+            # OTROS GASTOS DE EXPLOTACIÓN (62X, 63X)
+            elif prefix.startswith("62") or prefix.startswith("63"):
+                return "Otros gastos de explotación", f"{code} - Servicios exteriores"
+            
+            # GASTOS FINANCIEROS (66X)
+            elif prefix.startswith("66"):
+                return "Gastos financieros", f"{code} - Gastos financieros"
+            
+            # INGRESOS FINANCIEROS (769, 76X)
+            elif prefix == "769" or prefix.startswith("76"):
+                return "Ingresos financieros", f"{code} - Ingresos financieros"
+            
+            # DIFERENCIAS DE CAMBIO (específicas)
+            elif prefix == "668" or prefix == "768":
+                return "Diferencias de cambio", f"{code} - Diferencias de cambio"
+            
+            # OTROS RESULTADOS (67X, 77X)
+            elif prefix.startswith("67") or prefix.startswith("77"):
+                return "Otros resultados", f"{code} - Otros resultados"
+            
+            # INGRESOS (70X-75X)
+            elif prefix.startswith("70") or prefix.startswith("71") or prefix.startswith("72") or prefix.startswith("73") or prefix.startswith("74") or prefix.startswith("75"):
+                return "Ingresos", f"{code} - Ingresos de explotación"
+        
+        # 3. PRIORIDAD 3: Por contexto del proveedor
+        if "ad consulting" in provider_clean:
+            return "Aprovisionamientos", f"{code} - AD CONSULTING"
+        elif any(word in name for word in ["nomina", "sueldo", "salario", "ss"]):
+            return "Gastos de personal", f"{code} - Personal"
+        elif any(word in name for word in ["interes", "prestamo", "credito"]):
+            return "Gastos financieros", f"{code} - Financiero"
+        
+        # 4. FALLBACK: Por tipo de documento
+        if endpoint == "invoice":
+            return "Ingresos", f"{code} - Factura de venta"
+        elif amount < 0:
+            return "Otros gastos de explotación", f"{code} - Gasto general"
         else:
-            fecha = pd.to_datetime(raw_date, errors='coerce')
+            return "Ingresos", f"{code} - Ingreso general"
+
+    # ====== PROCESADOR PRINCIPAL CORREGIDO ======
+    def process_holded_data_corrected(start_dt: datetime, end_dt: datetime, cliente_filter: str = "Todo"):
+        """Procesador principal completamente corregido con controles estrictos"""
+        st.subheader("🔧 Procesamiento Corregido de Datos Holded")
         
-        if pd.isna(fecha):
-            return lines
+        all_transactions = []
         
-        # Buscar líneas en múltiples campos
-        items_keys = ["items", "lines", "concepts", "expenses", "details", "entries"]
-        items = []
-        
-        for key in items_keys:
-            if key in doc_json and doc_json[key]:
-                items = doc_json[key]
-                break
-        
-        if items and isinstance(items, list):
-            # Procesar líneas detalladas
-            for item in items:
-                if not isinstance(item, dict):
-                    continue
+        # ====== PASO 1: INGRESOS (FACTURAS) ======
+        with st.expander("💰 Procesando Ingresos (Facturas)", expanded=True):
+            invoices = get_documents_with_strict_filters("invoice", start_dt, end_dt)
+            
+            for invoice in invoices:
+                try:
+                    # Fecha
+                    inv_date = invoice.get("date")
+                    if isinstance(inv_date, (int, float)):
+                        fecha = pd.to_datetime(inv_date, unit='s')
+                    else:
+                        fecha = pd.to_datetime(inv_date)
                     
-                # Obtener importe de la línea
-                amount = 0.0
-                amount_keys = ["subTotal", "subtotal", "untaxedAmount", "netAmount", 
-                              "base", "amount", "total", "value", "import"]
+                    # Importe
+                    amount = 0.0
+                    for field in ["subTotal", "subtotal", "untaxedAmount", "total"]:
+                        if field in invoice and invoice[field] is not None:
+                            try:
+                                amount = float(invoice[field])
+                                break
+                            except:
+                                continue
+                    
+                    if amount <= 0:
+                        continue
+                    
+                    # Cliente
+                    cliente = invoice.get("contactName", "Sin nombre")
+                    if cliente_filter != "Todo" and cliente != cliente_filter:
+                        continue
+                    
+                    # Clasificar
+                    categoria, descripcion = classify_account_robust(
+                        "70500000", f"Factura {invoice.get('docNumber', '')}", cliente, amount, "invoice"
+                    )
+                    
+                    all_transactions.append({
+                        "fecha": fecha,
+                        "periodo": fecha.to_period("M").strftime("%Y-%m"),
+                        "cliente": cliente,
+                        "categoria": categoria,
+                        "cuenta": "70500000",
+                        "descripcion": descripcion,
+                        "importe": abs(amount),  # Positivo para ingresos
+                        "fuente": "Factura",
+                        "doc_id": invoice.get("id", ""),
+                        "doc_number": invoice.get("docNumber", "")
+                    })
+                    
+                except Exception as e:
+                    continue
+            
+            st.success(f"✅ Procesadas {len([t for t in all_transactions if t['categoria'] == 'Ingresos'])} facturas")
+        
+        # ====== PASO 2: LIBRO DIARIO ======
+        with st.expander("📚 Procesando Libro Diario", expanded=True):
+            ledger_entries = get_ledger_with_debugging(start_dt, end_dt)
+            ledger_processed = 0
+            
+            for entry in ledger_entries:
+                try:
+                    # Fecha
+                    entry_date = entry.get("date")
+                    if isinstance(entry_date, (int, float)):
+                        fecha = pd.to_datetime(entry_date, unit='s')
+                    else:
+                        fecha = pd.to_datetime(entry_date)
+                    
+                    # Importe
+                    amount = entry.get("amount", 0)
+                    if amount is None:
+                        debit = float(entry.get("debit", 0) or 0)
+                        credit = float(entry.get("credit", 0) or 0)
+                        amount = debit - credit
+                    
+                    if amount == 0:
+                        continue
+                    
+                    # Cuenta
+                    account_code = str(entry.get("accountCode", ""))
+                    account_name = str(entry.get("accountName", ""))
+                    
+                    if not account_code:
+                        continue
+                    
+                    # Cliente
+                    cliente_entry = entry.get("contactName") or entry.get("thirdParty") or "Libro Diario"
+                    if cliente_filter != "Todo" and cliente_entry != cliente_filter:
+                        continue
+                    
+                    # Clasificar
+                    categoria, descripcion = classify_account_robust(
+                        account_code, account_name, cliente_entry, amount, "ledger"
+                    )
+                    
+                    # Normalizar importe según categoría
+                    if categoria in ["Aprovisionamientos", "Gastos de personal", "Otros gastos de explotación", "Gastos financieros"]:
+                        importe_final = -abs(amount)
+                    elif categoria in ["Ingresos", "Ingresos financieros"]:
+                        importe_final = abs(amount)
+                    else:
+                        importe_final = amount  # Mantener signo original
+                    
+                    all_transactions.append({
+                        "fecha": fecha,
+                        "periodo": fecha.to_period("M").strftime("%Y-%m"),
+                        "cliente": cliente_entry,
+                        "categoria": categoria,
+                        "cuenta": account_code,
+                        "descripcion": descripcion,
+                        "importe": importe_final,
+                        "fuente": "Libro Diario",
+                        "doc_id": entry.get("id", ""),
+                        "doc_number": ""
+                    })
+                    
+                    ledger_processed += 1
+                    
+                except Exception as e:
+                    continue
+            
+            st.success(f"✅ Procesadas {ledger_processed} entradas del libro diario")
+        
+        # ====== PASO 3: DOCUMENTOS DE GASTOS (SOLO SI NO HAY LIBRO DIARIO) ======
+        if ledger_processed == 0:
+            st.warning("⚠️ No hay datos del libro diario. Procesando documentos como fallback...")
+            
+            with st.expander("📄 Procesando Documentos de Gastos", expanded=True):
+                doc_types = ["purchase", "bill", "expense"]
+                doc_processed = 0
                 
-                for key in amount_keys:
-                    if key in item and item[key] is not None:
+                # Para evitar duplicados entre documentos
+                processed_docs = set()
+                
+                for doc_type in doc_types:
+                    documents = get_documents_with_strict_filters(doc_type, start_dt, end_dt)
+                    
+                    for doc in documents:
                         try:
-                            amount = float(item[key])
-                            break
-                        except:
+                            # Evitar duplicados por ID
+                            doc_id = doc.get("id", "")
+                            if doc_id in processed_docs:
+                                continue
+                            processed_docs.add(doc_id)
+                            
+                            # Fecha
+                            doc_date = doc.get("date")
+                            if isinstance(doc_date, (int, float)):
+                                fecha = pd.to_datetime(doc_date, unit='s')
+                            else:
+                                fecha = pd.to_datetime(doc_date)
+                            
+                            # Importe
+                            amount = 0.0
+                            for field in ["subTotal", "subtotal", "untaxedAmount", "total"]:
+                                if field in doc and doc[field] is not None:
+                                    try:
+                                        amount = float(doc[field])
+                                        break
+                                    except:
+                                        continue
+                            
+                            if amount <= 0:
+                                continue
+                            
+                            # Cliente
+                            proveedor = doc.get("contactName", "Sin nombre")
+                            if cliente_filter != "Todo" and proveedor != cliente_filter:
+                                continue
+                            
+                            # Inferir cuenta por proveedor y documento
+                            if "ad consulting" in proveedor.lower():
+                                account_code = "60700017"
+                            elif doc_type == "purchase":
+                                account_code = "62900000"  # Gastos generales
+                            else:
+                                account_code = "62300000"  # Servicios profesionales
+                            
+                            # Clasificar
+                            categoria, descripcion = classify_account_robust(
+                                account_code, f"{doc_type} {proveedor}", proveedor, amount, doc_type
+                            )
+                            
+                            all_transactions.append({
+                                "fecha": fecha,
+                                "periodo": fecha.to_period("M").strftime("%Y-%m"),
+                                "cliente": proveedor,
+                                "categoria": categoria,
+                                "cuenta": account_code,
+                                "descripcion": descripcion,
+                                "importe": -abs(amount),  # Negativo para gastos
+                                "fuente": f"Documento {doc_type}",
+                                "doc_id": doc_id,
+                                "doc_number": doc.get("docNumber", "")
+                            })
+                            
+                            doc_processed += 1
+                            
+                        except Exception as e:
                             continue
                 
-                # Si no hay importe directo, calcular qty * price
-                if amount == 0:
-                    try:
-                        qty = float(item.get("quantity", item.get("qty", 1)))
-                        price_keys = ["unitPrice", "price", "unitprice", "unit_cost", "unitCost"]
-                        price = 0
-                        for key in price_keys:
-                            if key in item and item[key] is not None:
-                                price = float(item[key])
-                                break
-                        amount = qty * price
-                    except:
-                        continue
-                
-                if amount == 0:
-                    continue
-                    
-                # Obtener código y nombre de cuenta
-                account_code = ""
-                account_name = ""
-                
-                code_keys = ["expenseAccountCode", "accountCode", "expenseAccountId", 
-                            "accountId", "account", "expenseAccount"]
-                for key in code_keys:
-                    if key in item and item[key]:
-                        account_code = str(item[key])
-                        break
-                
-                name_keys = ["accountName", "name", "description", "concept", "title"]
-                for key in name_keys:
-                    if key in item and item[key]:
-                        account_name = str(item[key])
-                        break
-                
-                lines.append((fecha, account_code, account_name, float(amount)))
+                st.success(f"✅ Procesados {doc_processed} documentos de gastos")
         
-        else:
-            # Si no hay líneas detalladas, usar el total del documento
-            total = 0.0
-            total_keys = ["subTotal", "subtotal", "untaxedAmount", "total", 
-                         "amount", "netAmount", "baseAmount"]
-            
-            for key in total_keys:
-                if key in doc_json and doc_json[key] is not None:
-                    try:
-                        total = float(doc_json[key])
-                        break
-                    except:
-                        continue
-            
-            if total > 0:
-                # Inferir cuenta por proveedor o tipo de documento
-                account_code = infer_account_from_context(doc_json, endpoint_type)
-                account_name = f"Gasto {doc_json.get('contactName', 'sin proveedor')} - {endpoint_type}"
-                lines.append((fecha, account_code, account_name, float(total)))
+        # ====== CONSOLIDACIÓN Y VALIDACIÓN ======
+        if not all_transactions:
+            st.error("❌ No se encontraron transacciones en el período seleccionado")
+            return pd.DataFrame()
         
-        return lines
+        df_consolidated = pd.DataFrame(all_transactions)
+        
+        # Eliminar duplicados exactos
+        before_count = len(df_consolidated)
+        df_consolidated = df_consolidated.drop_duplicates(
+            subset=["fecha", "cuenta", "importe", "cliente"], 
+            keep="first"
+        )
+        after_count = len(df_consolidated)
+        
+        if before_count != after_count:
+            st.info(f"🔧 Eliminados {before_count - after_count} duplicados exactos")
+        
+        # Mostrar resumen por categoría
+        st.subheader("📊 Resumen por Categoría")
+        category_summary = df_consolidated.groupby("categoria")["importe"].sum().reset_index()
+        category_summary = category_summary.sort_values("importe")
+        st.dataframe(category_summary, use_container_width=True)
+        
+        # Mostrar resumen por fuente
+        st.subheader("📊 Resumen por Fuente")
+        source_summary = df_consolidated.groupby(["fuente", "categoria"])["importe"].sum().unstack(fill_value=0)
+        st.dataframe(source_summary, use_container_width=True)
+        
+        return df_consolidated
 
-    # ====== INFERENCIA DE CUENTA POR CONTEXTO ======
-    def infer_account_from_context(doc_json: dict, endpoint_type: str) -> str:
-        """
-        Infiere el código de cuenta basado en el proveedor y tipo de documento
-        """
-        supplier = str(doc_json.get("contactName", "")).lower()
-        description = str(doc_json.get("description", "")).lower()
-        
-        # Mapeo por proveedor conocido
-        supplier_mapping = {
-            "ad consulting": "60700017",
-            "holded": "62200001",
-            "caixabank": "62600001",
-            "bbva": "62600002",
-            "binance": "62600003",
-            "lexus": "62100002",
-            "technource": "62300020",
-            "itma": "62300021",
-            "sensus": "62300001",
-        }
-        
-        for key, account in supplier_mapping.items():
-            if key in supplier:
-                return account
-        
-        # Mapeo por palabras clave en descripción
-        keyword_mapping = {
-            "nomina": "64000000",
-            "sueldo": "64000000",
-            "salario": "64000000",
-            "seguridad social": "64200000",
-            "indemnizacion": "64100000",
-            "alquiler": "62100001",
-            "renting": "62100002",
-            "hosting": "62200002",
-            "mantenimiento": "62200001",
-            "abogado": "62300004",
-            "consultor": "62300001",
-            "transporte": "62400000",
-            "seguro": "62500000",
-            "banco": "62600001",
-            "publicidad": "62700000",
-            "software": "62900001",
-            "licencia": "62900001",
-            "viaje": "62900003",
-            "dieta": "62900004",
-            "combustible": "62900006",
-            "gasoil": "62900006",
-        }
-        
-        for keyword, account in keyword_mapping.items():
-            if keyword in description or keyword in supplier:
-                return account
-        
-        # Fallback por tipo de endpoint
-        endpoint_defaults = {
-            "purchase": "60000000",  # Compras
-            "bill": "62300000",      # Servicios profesionales
-            "expense": "62900000",   # Otros gastos
-            "receipt": "62900000",   # Otros gastos
-        }
-        
-        return endpoint_defaults.get(endpoint_type, "62900000")
-
-    # ====== VALIDACIÓN Y COMPARACIÓN ======
-    def validate_totals_against_expected(df_consolidated: pd.DataFrame):
-        """
-        Valida los totales obtenidos contra los esperados del Excel
-        """
-        st.subheader("🔍 Validación de Totales")
-        
-        # Totales esperados (del Excel)
+    # ====== FUNCIÓN DE VALIDACIÓN ======
+    def validate_against_expected_corrected(df_consolidated: pd.DataFrame):
+        """Validación contra totales esperados del Excel"""
         expected_totals = {
             "Aprovisionamientos": -9012.02,
             "Gastos de personal": -52201.39,
             "Otros gastos de explotación": -275769.55,
             "Gastos financieros": -890.53,
-            "Diferencias de cambio": 10628.19,  # Neto positivo
-            "Otros resultados": 259.36,  # Neto (ingresos - gastos excepcionales)
+            "Diferencias de cambio": 10628.19,
+            "Otros resultados": 259.36,
             "Ingresos financieros": 0.18,
+            "Ingresos": 2318450.97
         }
         
-        # Totales obtenidos
         obtained_totals = df_consolidated.groupby("categoria")["importe"].sum().to_dict()
         
-        # Crear tabla de comparación
+        st.subheader("🔍 Validación vs Excel")
         comparison_data = []
-        total_diff = 0
         
         for categoria, expected in expected_totals.items():
             obtained = obtained_totals.get(categoria, 0)
             difference = obtained - expected
             percentage_diff = (difference / expected * 100) if expected != 0 else 0
-            total_diff += abs(difference)
             
-            status = "✅" if abs(difference) < 100 else "⚠️" if abs(difference) < 1000 else "❌"
+            if abs(difference) < 100:
+                status = "✅"
+            elif abs(difference) < 1000:
+                status = "⚠️"
+            else:
+                status = "❌"
             
             comparison_data.append({
                 "Categoría": categoria,
@@ -2002,266 +1972,33 @@ with tab3:
         df_comparison = pd.DataFrame(comparison_data)
         st.dataframe(df_comparison, use_container_width=True)
         
-        # Resumen de validación
+        total_diff = sum(abs(obtained_totals.get(cat, 0) - exp) for cat, exp in expected_totals.items())
+        
         if total_diff < 1000:
-            st.success(f"✅ Validación exitosa: Diferencia total < 1.000 € ({total_diff:,.2f} €)")
+            st.success(f"✅ Validación exitosa: Diferencia total = {total_diff:,.2f} €")
         elif total_diff < 10000:
             st.warning(f"⚠️ Validación parcial: Diferencia total = {total_diff:,.2f} €")
         else:
             st.error(f"❌ Validación fallida: Diferencia total = {total_diff:,.2f} €")
-        
-        return df_comparison
 
-    # ====== PROCESADOR PRINCIPAL CORREGIDO ======
-    def process_expenses_comprehensive(start_dt: datetime, end_dt: datetime, cliente_filter: str = "Todo"):
-        """
-        Procesador principal que combina libro diario + documentos
-        """
-        all_expense_lines = []
+    # ====== FUNCIÓN PRINCIPAL CORREGIDA ======
+    def process_pl_holded_FINAL(inicio_dt: datetime, fin_dt: datetime, cliente_pl: str):
+        """Función principal corregida para reemplazar en el Tab 3"""
+        st.info("🔧 Procesando con algoritmo corregido...")
         
-        st.subheader("📊 Procesamiento Comprehensivo de Gastos")
+        df_consolidated = process_holded_data_corrected(inicio_dt, fin_dt, cliente_pl)
         
-        # PASO 1: LIBRO DIARIO (FUENTE PRINCIPAL)
-        with st.expander("📚 Procesando Libro Diario", expanded=True):
-            st.info("🔍 Obteniendo entradas del libro diario...")
-            
-            ledger_entries = list_daily_ledger_corrected(start_dt, end_dt)
-            ledger_count = 0
-            
-            for entry in ledger_entries:
-                try:
-                    # Fecha
-                    entry_date = entry.get("date")
-                    if isinstance(entry_date, (int, float)):
-                        fecha = pd.to_datetime(entry_date, unit="s", errors="coerce")
-                    else:
-                        fecha = pd.to_datetime(entry_date, errors="coerce")
-                    
-                    if pd.isna(fecha):
-                        continue
-                    
-                    # Importe
-                    amount = entry.get("amount")
-                    if amount is None:
-                        debit = float(entry.get("debit", 0) or 0)
-                        credit = float(entry.get("credit", 0) or 0)
-                        amount = debit - credit
-                    else:
-                        amount = float(amount)
-                    
-                    if amount == 0:
-                        continue
-                    
-                    # Cuenta y clasificación
-                    account_code = str(entry.get("accountCode", "") or "")
-                    account_name = str(entry.get("accountName", "") or "")
-                    
-                    if not account_code:
-                        continue
-                    
-                    categoria, descripcion_completa = classify_account_with_mapping(account_code, account_name)
-                    
-                    # Cliente
-                    cliente_entry = (entry.get("contactName") or 
-                                   entry.get("thirdParty") or 
-                                   entry.get("customer") or 
-                                   "Libro Diario (sin cliente)")
-                    
-                    if cliente_filter != "Todo" and cliente_entry != cliente_filter:
-                        continue
-                    
-                    # Normalizar importe según categoría
-                    amount_norm = normalize_amount_by_category(categoria, amount)
-                    periodo = fecha.to_period("M").strftime("%Y-%m")
-                    
-                    all_expense_lines.append({
-                        "periodo": periodo,
-                        "fecha": fecha,
-                        "cliente": cliente_entry,
-                        "categoria": categoria,
-                        "importe": amount_norm,
-                        "cuenta": account_code,
-                        "descripcion": descripcion_completa,
-                        "fuente": "Libro Diario"
-                    })
-                    ledger_count += 1
-                    
-                except Exception as e:
-                    continue
-            
-            st.success(f"✅ Procesadas {ledger_count} entradas del libro diario")
-        
-        # PASO 2: DOCUMENTOS DE GASTOS (FUENTE COMPLEMENTARIA)
-        with st.expander("📄 Procesando Documentos de Gastos", expanded=True):
-            st.info("🔍 Obteniendo documentos de gastos...")
-            
-            expense_docs = get_comprehensive_expenses(start_dt, end_dt)
-            docs_count = 0
-            
-            # Obtener cuentas ya procesadas del libro diario para evitar duplicados
-            existing_accounts = set()
-            for line in all_expense_lines:
-                if line["cuenta"]:
-                    existing_accounts.add((line["fecha"].date(), line["cuenta"], abs(line["importe"])))
-            
-            for endpoint_type, doc in expense_docs:
-                try:
-                    # Filtrar por cliente
-                    if cliente_filter != "Todo":
-                        doc_cliente = doc.get("contactName", "")
-                        if doc_cliente != cliente_filter:
-                            continue
-                    
-                    # Obtener detalle del documento
-                    doc_id = str(doc.get("id", ""))
-                    if doc_id:
-                        detail = get_document_detail_corrected(endpoint_type, doc_id)
-                        if detail:
-                            doc = detail
-                    
-                    # Procesar líneas del documento
-                    doc_lines = parse_document_lines_enhanced(endpoint_type, doc)
-                    
-                    for fecha, account_code, account_name, amount in doc_lines:
-                        if pd.isna(fecha) or amount == 0:
-                            continue
-                        
-                        # Evitar duplicados con libro diario
-                        line_key = (fecha.date(), account_code, abs(amount))
-                        if line_key in existing_accounts:
-                            continue
-                        
-                        categoria, descripcion_completa = classify_account_with_mapping(account_code, account_name)
-                        
-                        proveedor = doc.get("contactName", "Sin nombre")
-                        periodo = fecha.to_period("M").strftime("%Y-%m")
-                        amount_norm = normalize_amount_by_category(categoria, amount)
-                        
-                        all_expense_lines.append({
-                            "periodo": periodo,
-                            "fecha": fecha,
-                            "cliente": proveedor,
-                            "categoria": categoria,
-                            "importe": amount_norm,
-                            "cuenta": account_code or f"{endpoint_type.upper()}XXX",
-                            "descripcion": descripcion_completa,
-                            "fuente": f"Documento {endpoint_type}"
-                        })
-                        docs_count += 1
-                        
-                except Exception as e:
-                    continue
-            
-            st.success(f"✅ Procesadas {docs_count} líneas de documentos")
-        
-        return all_expense_lines
-
-    # ====== FUNCIÓN PRINCIPAL MEJORADA ======
-    def process_pl_holded_comprehensive(inicio_dt: datetime, fin_dt: datetime, cliente_pl: str, usar_libro_diario: bool = True):
-        """
-        Función principal que procesa P&L de forma comprehensiva
-        """
-        all_data = []
-        
-        try:
-            # 1) INGRESOS (facturas de venta)
-            st.info("📥 Procesando ingresos...")
-            df_invoices = list_documents_corrected("invoice", inicio_dt, fin_dt)
-            
-            ingresos_data = []
-            if not df_invoices.empty:
-                for _, inv in df_invoices.iterrows():
-                    inv_date = inv.get("date")
-                    fecha = pd.to_datetime(inv_date, unit="s", errors="coerce") if isinstance(inv_date, (int, float)) else pd.to_datetime(inv_date, errors="coerce")
-                    if pd.isna(fecha):
-                        continue
-                        
-                    amount = 0.0
-                    for k in ("subTotal", "subtotal", "untaxedAmount", "total"):
-                        if k in inv and inv[k] is not None:
-                            try:
-                                amount = float(inv[k])
-                                break
-                            except:
-                                pass
-                    
-                    cliente = inv.get("contactName", "Sin nombre")
-                    if cliente_pl != "Todo" and cliente != cliente_pl:
-                        continue
-                    
-                    periodo = fecha.to_period("M").strftime("%Y-%m")
-                    amount_norm = normalize_amount_by_category("Ingresos", amount)
-                    
-                    ingresos_data.append({
-                        "periodo": periodo,
-                        "fecha": fecha,
-                        "cliente": cliente,
-                        "categoria": "Ingresos",
-                        "importe": amount_norm,
-                        "cuenta": "70XXX",
-                        "descripcion": f"Factura {inv.get('docNumber', '')}",
-                        "fuente": "Factura Venta"
-                    })
-            
-            st.success(f"✅ Procesados {len(ingresos_data)} ingresos")
-            all_data.extend(ingresos_data)
-            
-            # 2) GASTOS (usando función comprehensiva)
-            st.info("📤 Procesando gastos...")
-            gastos_data = process_expenses_comprehensive(inicio_dt, fin_dt, cliente_pl)
-            st.success(f"✅ Procesados {len(gastos_data)} gastos")
-            all_data.extend(gastos_data)
-            
-            # 3) CONSOLIDAR DATOS
-            df_consolidated = pd.DataFrame(all_data)
-            
-            if df_consolidated.empty:
-                st.warning("⚠️ No se encontraron datos en el período seleccionado")
-                return pd.DataFrame()
-            
-            # 4) VALIDAR CONTRA TOTALES ESPERADOS
-            validate_totals_against_expected(df_consolidated)
-            
-            # 5) MOSTRAR RESUMEN POR FUENTE
-            st.subheader("📊 Resumen por Fuente de Datos")
-            source_summary = df_consolidated.groupby(["fuente", "categoria"])["importe"].sum().unstack(fill_value=0)
-            st.dataframe(source_summary, use_container_width=True)
-            
+        if df_consolidated.empty:
             return df_consolidated
-            
-        except Exception as e:
-            st.error(f"❌ Error en procesamiento comprehensivo: {str(e)}")
-            st.exception(e)
-            return pd.DataFrame()
-
-    # ====== UTILIDADES ADICIONALES ======
-    def normalize_amount_by_category(cat: str, amount: float) -> float:
-        """Normaliza importes según categoría"""
-        amount = float(amount or 0)
-        expense_cats = {"Aprovisionamientos", "Gastos de personal", "Otros gastos de explotación", "Gastos financieros"}
-        income_cats = {"Ingresos", "Ingresos financieros"}
         
-        if cat in expense_cats:
-            return -abs(amount)
-        elif cat in income_cats:
-            return abs(amount)
-        else:
-            return amount  # Mantener signo original para diferencias de cambio y otros resultados
+        # Validar resultados
+        validate_against_expected_corrected(df_consolidated)
+        
+        return df_consolidated
 
-    def _strip_accents(s: str) -> str:
-        s = str(s or "")
-        return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
-
-    def _only_leading_digits(code: str) -> str:
-        code = str(code or "").strip().replace("\xa0", " ")
-        m = re.match(r"^([0-9]{2,})", code)
-        return m.group(1) if m else ""
-
-    # ====== FUNCIONES PARA P&L MENSUAL CON EVOLUCIÓN ======
+    # ====== FUNCIONES PARA P&L MENSUAL ======
     def create_monthly_pl_analysis(df_consolidated: pd.DataFrame, inicio_dt: datetime, fin_dt: datetime):
-        """
-        Crea análisis P&L mensual con evolución temporal y gráficos
-        """
+        """Crea análisis P&L mensual con evolución temporal y gráficos"""
         if df_consolidated.empty:
             st.warning("No hay datos para el análisis mensual")
             return None, None, None
@@ -2319,9 +2056,7 @@ with tab3:
         return monthly_summary, cumulative_summary, month_names
 
     def display_monthly_kpis(monthly_summary: pd.DataFrame, cumulative_summary: pd.DataFrame):
-        """
-        Muestra KPIs mensuales y acumulados
-        """
+        """Muestra KPIs mensuales y acumulados"""
         st.subheader("📊 KPIs - Último Mes vs Acumulado")
         
         # Último mes con datos
@@ -2360,9 +2095,7 @@ with tab3:
             )
 
     def create_evolution_charts(monthly_summary: pd.DataFrame):
-        """
-        Crea gráficos de evolución temporal
-        """
+        """Crea gráficos de evolución temporal"""
         st.subheader("📈 Evolución Temporal - Gráficos Interactivos")
         
         # Preparar datos para gráficos
@@ -2393,9 +2126,7 @@ with tab3:
         st.altair_chart(line_chart, use_container_width=True)
 
     def generate_monthly_pl_analysis(df_consolidated: pd.DataFrame, inicio_dt: datetime, fin_dt: datetime):
-        """
-        Función principal que genera todo el análisis mensual
-        """
+        """Función principal que genera todo el análisis mensual"""
         if df_consolidated.empty:
             st.warning("No hay datos para el análisis mensual")
             return
@@ -2580,13 +2311,15 @@ with tab3:
         st.stop()
 
     # Cargar clientes dinámicamente para filtro
-    df_invoices_for_clients = list_documents_corrected(
-        "invoice",
-        datetime.combine(fecha_inicio_pl, datetime.min.time()),
-        datetime.combine(fecha_fin_pl, datetime.max.time())
-    )
-
-    clientes_invoices = df_invoices_for_clients["contactName"].dropna().unique().tolist() if not df_invoices_for_clients.empty else []
+    try:
+        df_invoices_for_clients = get_documents_with_strict_filters(
+            "invoice",
+            datetime.combine(fecha_inicio_pl, datetime.min.time()),
+            datetime.combine(fecha_fin_pl, datetime.max.time())
+        )
+        clientes_invoices = [doc.get("contactName", "") for doc in df_invoices_for_clients if doc.get("contactName")]
+    except:
+        clientes_invoices = []
 
     clientes_unicos = sorted(set(clientes_invoices))
     clientes_pl_3 = ["Todo"] + clientes_unicos
@@ -2601,17 +2334,15 @@ with tab3:
         st.session_state.pl_cliente_sel = cliente_pl
         st.session_state.pl_data_updated = False
 
-    usar_libro_diario = st.sidebar.checkbox("Usar Libro Diario", value=True, key="usar_libro")
     mostrar_detalle_cuentas = st.sidebar.checkbox("Mostrar Detalle por Cuenta", value=False, key="mostrar_detalle")
 
     if st.sidebar.button("🔄 Actualizar P&L", type="primary"):
         st.session_state.pl_data_updated = False
-        list_documents_corrected.clear()
-        get_document_detail_corrected.clear()
-        list_daily_ledger_corrected.clear()
-        get_comprehensive_expenses.clear()
+        # Limpiar cache
+        get_documents_with_strict_filters.clear()
+        get_ledger_with_debugging.clear()
 
-    st.sidebar.info(f"**Filtros activos:**\n- Período: {fecha_inicio_pl} a {fecha_fin_pl}\n- Cliente: {cliente_pl}\n- Libro diario: {'Sí' if usar_libro_diario else 'No'}")
+    st.sidebar.info(f"**Filtros activos:**\n- Período: {fecha_inicio_pl} a {fecha_fin_pl}\n- Cliente: {cliente_pl}")
 
     # ====== PROCESAMIENTO PRINCIPAL ======
     inicio_dt = datetime.combine(fecha_inicio_pl, datetime.min.time())
@@ -2619,9 +2350,9 @@ with tab3:
 
     if not st.session_state.get("pl_data_updated", False):
         try:
-            with st.spinner("Procesando P&L comprehensivo..."):
-                # PROCESAMIENTO COMPREHENSIVO (reemplaza todo el procesamiento anterior)
-                df_consolidated = process_pl_holded_comprehensive(inicio_dt, fin_dt, cliente_pl, usar_libro_diario)
+            with st.spinner("Procesando P&L con algoritmo corregido..."):
+                # USAR LA FUNCIÓN CORREGIDA
+                df_consolidated = process_pl_holded_FINAL(inicio_dt, fin_dt, cliente_pl)
                 
                 if df_consolidated.empty:
                     st.warning("⚠️ No se encontraron datos en el período seleccionado")
@@ -2631,9 +2362,9 @@ with tab3:
                 st.session_state.df_pl_consolidated = df_consolidated
                 st.session_state.pl_data_updated = True
 
-                # Debug resumen
+                # Debug resumen final
                 categories_summary = df_consolidated.groupby("categoria")["importe"].sum()
-                st.write("🔎 Resumen por Categoría:", categories_summary.to_dict())
+                st.write("🎯 Resumen Final por Categoría:", categories_summary.to_dict())
 
         except Exception as e:
             st.error(f"❌ Error procesando datos: {str(e)}")
@@ -2781,524 +2512,3 @@ with tab3:
                 st.warning("⚠️ No hay datos consolidados disponibles.")
         else:
             st.info("👆 Usa los filtros del sidebar y presiona 'Actualizar P&L' para cargar los datos.")
-
-    # ====== DIAGNÓSTICOS AVANZADOS ======
-    st.markdown("---")
-    st.header("🔧 Diagnósticos Avanzados")
-    
-    # Función para diagnosticar aprovisionamientos
-    def diagnose_aprovisionamientos_issues(df_consolidated: pd.DataFrame):
-        """
-        Diagnóstico detallado de aprovisionamientos para detectar duplicados y errores
-        """
-        st.subheader("🔍 Diagnóstico de Aprovisionamientos")
-        
-        if df_consolidated.empty:
-            st.warning("No hay datos para diagnosticar")
-            return
-        
-        # Filtrar solo aprovisionamientos
-        df_aprov = df_consolidated[df_consolidated["categoria"] == "Aprovisionamientos"].copy()
-        
-        if df_aprov.empty:
-            st.info("No se encontraron aprovisionamientos en los datos")
-            return
-        
-        # === ANÁLISIS GENERAL ===
-        total_aprov = df_aprov["importe"].sum()
-        expected_aprov = -9012.02  # Del Excel
-        difference = total_aprov - expected_aprov
-        
-        col1, col2, col3 = st.columns(3)
-        col1.metric("💰 Total Obtenido", f"{total_aprov:,.2f} €")
-        col2.metric("🎯 Total Esperado", f"{expected_aprov:,.2f} €")
-        col3.metric("⚠️ Diferencia", f"{difference:,.2f} €", 
-                    delta=f"{(difference/expected_aprov*100):.1f}%" if expected_aprov != 0 else "N/A")
-        
-        # === VERIFICACIÓN CUENTA ESPECÍFICA ===
-        st.subheader("🎯 Verificación Cuenta AD CONSULTING (60700017)")
-        
-        ad_consulting = df_aprov[df_aprov['cuenta'] == '60700017'].copy()
-        
-        if ad_consulting.empty:
-            st.error("❌ No se encontró la cuenta 60700017 - Trabajos realizados por AD CONSULTING")
-            
-            # Buscar variaciones posibles
-            possible_variants = df_consolidated[df_consolidated['descripcion'].str.contains('AD CONSULTING', case=False, na=False)]
-            if not possible_variants.empty:
-                st.warning("⚠️ Se encontraron estas variaciones:")
-                st.dataframe(possible_variants[['cuenta', 'descripcion', 'importe', 'fuente']])
-        else:
-            st.success("✅ Cuenta 60700017 encontrada")
-            
-            total_ad = ad_consulting['importe'].sum()
-            expected_ad = -9012.02
-            
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Total AD Consulting", f"{total_ad:,.2f} €")
-            col2.metric("Esperado AD Consulting", f"{expected_ad:,.2f} €") 
-            col3.metric("Diferencia AD", f"{total_ad - expected_ad:,.2f} €")
-            
-            # Mostrar detalle
-            st.dataframe(ad_consulting[['fecha', 'periodo', 'importe', 'fuente', 'cliente']])
-        
-        # === DETALLE POR CUENTA ===
-        st.subheader("📋 Detalle por Cuenta")
-        
-        cuenta_summary = df_aprov.groupby(["cuenta", "descripcion"]).agg({
-            "importe": ["sum", "count"],
-            "fuente": lambda x: ", ".join(x.unique()),
-            "fecha": ["min", "max"]
-        }).round(2)
-        
-        # Aplanar columnas
-        cuenta_summary.columns = ["Total", "Cantidad_Registros", "Fuentes", "Fecha_Min", "Fecha_Max"]
-        cuenta_summary = cuenta_summary.reset_index()
-        
-        st.dataframe(cuenta_summary, use_container_width=True)
-        
-        # === DETECCIÓN DE DUPLICADOS ===
-        st.subheader("🚨 Detección de Posibles Duplicados")
-        
-        # Buscar registros con mismo importe, fecha y cuenta
-        df_aprov['fecha_str'] = df_aprov['fecha'].dt.strftime('%Y-%m-%d')
-        df_aprov['importe_abs'] = df_aprov['importe'].abs()
-        
-        # Agrupar por fecha, cuenta e importe para detectar duplicados
-        duplicados = df_aprov.groupby(['fecha_str', 'cuenta', 'importe_abs']).agg({
-            'importe': 'sum',
-            'fuente': lambda x: list(x),
-            'descripcion': 'first',
-            'cliente': 'first'
-        }).reset_index()
-        
-        # Filtrar solo los que aparecen en múltiples fuentes
-        duplicados['num_fuentes'] = duplicados['fuente'].apply(len)
-        posibles_duplicados = duplicados[duplicados['num_fuentes'] > 1]
-        
-        if not posibles_duplicados.empty:
-            st.error(f"⚠️ Encontrados {len(posibles_duplicados)} posibles duplicados:")
-            
-            # Mostrar duplicados
-            duplicados_display = posibles_duplicados[['fecha_str', 'cuenta', 'descripcion', 'importe_abs', 'fuente', 'importe']].copy()
-            duplicados_display.columns = ['Fecha', 'Cuenta', 'Descripción', 'Importe_Original', 'Fuentes', 'Total_Duplicado']
-            st.dataframe(duplicados_display, use_container_width=True)
-            
-            # Calcular impacto de duplicados
-            impacto_duplicados = posibles_duplicados['importe'].sum() / 2  # Dividir por 2 porque está duplicado
-            st.error(f"💸 Impacto estimado de duplicados: {impacto_duplicados:,.2f} €")
-            
-            # Nuevo total sin duplicados
-            total_corregido = total_aprov - impacto_duplicados
-            st.success(f"✅ Total corregido (sin duplicados): {total_corregido:,.2f} €")
-            st.success(f"📊 Diferencia con Excel después de corrección: {total_corregido - expected_aprov:,.2f} €")
-            
-            return posibles_duplicados
-            
-        else:
-            st.success("✅ No se detectaron duplicados obvios en aprovisionamientos")
-        
-        # === ANÁLISIS POR FUENTE ===
-        st.subheader("📊 Análisis por Fuente de Datos")
-        
-        fuente_summary = df_aprov.groupby("fuente")["importe"].agg(["sum", "count"]).round(2)
-        fuente_summary.columns = ["Total", "Cantidad"]
-        fuente_summary = fuente_summary.reset_index()
-        
-        st.dataframe(fuente_summary, use_container_width=True)
-        
-        return None
-
-    def fix_aprovisionamientos_duplicates(df_consolidated: pd.DataFrame):
-        """
-        Función para corregir duplicados en aprovisionamientos
-        """
-        if df_consolidated.empty:
-            return df_consolidated
-        
-        # Crear copia para no modificar el original
-        df_fixed = df_consolidated.copy()
-        
-        # Filtrar aprovisionamientos
-        df_aprov = df_fixed[df_fixed["categoria"] == "Aprovisionamientos"].copy()
-        df_otros = df_fixed[df_fixed["categoria"] != "Aprovisionamientos"].copy()
-        
-        if df_aprov.empty:
-            return df_consolidated
-        
-        # Detectar duplicados
-        df_aprov['fecha_str'] = df_aprov['fecha'].dt.strftime('%Y-%m-%d')
-        df_aprov['importe_abs'] = df_aprov['importe'].abs()
-        df_aprov['duplicate_key'] = df_aprov['fecha_str'] + '_' + df_aprov['cuenta'] + '_' + df_aprov['importe_abs'].astype(str)
-        
-        # Remover duplicados manteniendo solo el del libro diario (más confiable)
-        df_aprov['fuente_priority'] = df_aprov['fuente'].map({
-            'Libro Diario': 1,
-            'Documento purchase': 2,
-            'Documento bill': 3,
-            'Documento expense': 4,
-            'Factura Venta': 5
-        })
-        
-        # Ordenar por prioridad y mantener solo el primero de cada grupo
-        df_aprov_sorted = df_aprov.sort_values(['duplicate_key', 'fuente_priority'])
-        df_aprov_fixed = df_aprov_sorted.groupby('duplicate_key').first().reset_index()
-        
-        # Eliminar columnas auxiliares
-        df_aprov_fixed = df_aprov_fixed.drop(['fecha_str', 'importe_abs', 'duplicate_key', 'fuente_priority'], axis=1)
-        
-        # Recombinar datos
-        df_result = pd.concat([df_otros, df_aprov_fixed], ignore_index=True)
-        
-        return df_result
-
-    # Botón para diagnosticar aprovisionamientos
-    col_diag1, col_diag2, col_diag3 = st.columns(3)
-    
-    with col_diag1:
-        if st.button("🔍 Diagnosticar Aprovisionamientos", type="secondary"):
-            if st.session_state.get("pl_data_updated", False):
-                df_data = st.session_state.get("df_pl_consolidated", pd.DataFrame())
-                if not df_data.empty:
-                    with st.expander("📋 Diagnóstico de Aprovisionamientos", expanded=True):
-                        duplicados_encontrados = diagnose_aprovisionamientos_issues(df_data)
-                        
-                        if duplicados_encontrados is not None and not duplicados_encontrados.empty:
-                            st.markdown("---")
-                            if st.button("🔧 Corregir Duplicados Automáticamente", key="fix_aprov"):
-                                df_fixed = fix_aprovisionamientos_duplicates(df_data)
-                                st.session_state.df_pl_consolidated = df_fixed
-                                st.success("✅ Duplicados corregidos. Presiona 'Actualizar P&L' para ver los cambios.")
-                else:
-                    st.warning("No hay datos cargados para diagnosticar")
-            else:
-                st.warning("Primero carga los datos usando 'Actualizar P&L'")
-
-    with col_diag2:
-        if st.button("🔍 Diagnosticar Otros Gastos", type="secondary"):
-            if st.session_state.get("pl_data_updated", False):
-                df_data = st.session_state.get("df_pl_consolidated", pd.DataFrame())
-                if not df_data.empty:
-                    with st.expander("📋 Diagnóstico de Otros Gastos de Explotación", expanded=True):
-                        # Función específica para otros gastos
-                        def diagnose_otros_gastos_explotacion(df_consolidated: pd.DataFrame):
-                            """
-                            Diagnóstico detallado de otros gastos de explotación
-                            """
-                            st.subheader("🔍 Diagnóstico de Otros Gastos de Explotación")
-                            
-                            if df_consolidated.empty:
-                                st.warning("No hay datos para diagnosticar")
-                                return
-                            
-                            # Filtrar solo otros gastos de explotación
-                            df_otros = df_consolidated[df_consolidated["categoria"] == "Otros gastos de explotación"].copy()
-                            
-                            if df_otros.empty:
-                                st.info("No se encontraron otros gastos de explotación en los datos")
-                                return
-                            
-                            # === ANÁLISIS GENERAL ===
-                            total_otros = df_otros["importe"].sum()
-                            expected_otros = -275769.55  # Del Excel
-                            difference = total_otros - expected_otros
-                            
-                            col1, col2, col3 = st.columns(3)
-                            col1.metric("💰 Total Obtenido", f"{total_otros:,.2f} €")
-                            col2.metric("🎯 Total Esperado", f"{expected_otros:,.2f} €")
-                            col3.metric("⚠️ Diferencia", f"{difference:,.2f} €", 
-                                        delta=f"{(difference/expected_otros*100):.1f}%" if expected_otros != 0 else "N/A")
-                            
-                            # === VERIFICACIÓN DE CUENTAS ESPECÍFICAS IMPORTANTES ===
-                            st.subheader("🎯 Verificación de Cuentas Clave del Excel")
-                            
-                            # Cuentas específicas con sus importes esperados del Excel
-                            cuentas_clave = {
-                                "62100001": {"esperado": -18180.00, "descripcion": "Alquiler apartamentos turísticos"},
-                                "62100002": {"esperado": -4168.60, "descripcion": "Renting Lexus kinto ONe"},
-                                "62200002": {"esperado": -23486.29, "descripcion": "Hostings"},
-                                "62300004": {"esperado": -72264.93, "descripcion": "Servicios profesionales Abogados"},
-                                "62300020": {"esperado": -17276.52, "descripcion": "Servicios TECHNOURCE"},
-                                "62300021": {"esperado": -19421.85, "descripcion": "Servicios ITMA"},
-                                "62700000": {"esperado": -46943.81, "descripcion": "Publicidad propaganda"},
-                                "62900001": {"esperado": -13292.64, "descripcion": "Software y Licencias"},
-                                "62900003": {"esperado": -36143.84, "descripcion": "Viajes hoteles vuelos"},
-                                "62600001": {"esperado": -161.22, "descripcion": "Servicios bancarios CAIXABANK"},
-                                "62600002": {"esperado": -1271.35, "descripcion": "Servicios bancarios BBVA"},
-                            }
-                            
-                            verificacion_data = []
-                            total_cuentas_clave = 0
-                            
-                            for cuenta, info in cuentas_clave.items():
-                                cuenta_data = df_otros[df_otros['cuenta'] == cuenta]
-                                
-                                if cuenta_data.empty:
-                                    obtenido = 0.0
-                                    status = "❌ NO ENCONTRADA"
-                                else:
-                                    obtenido = cuenta_data['importe'].sum()
-                                    total_cuentas_clave += obtenido
-                                    diferencia = abs(obtenido - info["esperado"])
-                                    
-                                    if diferencia < 10:
-                                        status = "✅ CORRECTO"
-                                    elif diferencia < 100:
-                                        status = "⚠️ MENOR DIF"
-                                    else:
-                                        status = "❌ DIFERENCIA"
-                                
-                                verificacion_data.append({
-                                    "Cuenta": cuenta,
-                                    "Descripción": info["descripcion"],
-                                    "Esperado": f"{info['esperado']:,.2f} €",
-                                    "Obtenido": f"{obtenido:,.2f} €",
-                                    "Diferencia": f"{obtenido - info['esperado']:,.2f} €",
-                                    "Status": status
-                                })
-                            
-                            df_verificacion = pd.DataFrame(verificacion_data)
-                            st.dataframe(df_verificacion, use_container_width=True)
-                            
-                            # === ANÁLISIS POR SUBCATEGORÍAS (62X) ===
-                            st.subheader("📊 Análisis por Subcategorías")
-                            
-                            # Agrupar por prefijo de cuenta
-                            df_otros['prefijo'] = df_otros['cuenta'].str[:3]
-                            subcategoria_summary = df_otros.groupby('prefijo').agg({
-                                'importe': ['sum', 'count'],
-                                'cuenta': lambda x: ', '.join(sorted(x.unique())[:3])
-                            }).round(2)
-                            
-                            subcategoria_summary.columns = ['Total', 'Cantidad', 'Cuentas_Ejemplo']
-                            subcategoria_summary = subcategoria_summary.reset_index()
-                            
-                            # Mapeo de subcategorías
-                            subcategoria_mapping = {
-                                '621': 'Alquileres y renting',
-                                '622': 'Mantenimiento y reparaciones',
-                                '623': 'Servicios profesionales',
-                                '624': 'Transportes',
-                                '625': 'Primas de seguros',
-                                '626': 'Servicios bancarios',
-                                '627': 'Publicidad y propaganda',
-                                '628': 'Suministros',
-                                '629': 'Otros servicios',
-                                '631': 'Tributos'
-                            }
-                            
-                            subcategoria_summary['Descripción'] = subcategoria_summary['prefijo'].map(subcategoria_mapping)
-                            subcategoria_summary = subcategoria_summary[['prefijo', 'Descripción', 'Total', 'Cantidad', 'Cuentas_Ejemplo']]
-                            
-                            st.dataframe(subcategoria_summary, use_container_width=True)
-                            
-                            # === DETECCIÓN DE DUPLICADOS ===
-                            st.subheader("🚨 Detección de Posibles Duplicados")
-                            
-                            df_otros['fecha_str'] = df_otros['fecha'].dt.strftime('%Y-%m-%d')
-                            df_otros['importe_abs'] = df_otros['importe'].abs()
-                            
-                            duplicados = df_otros.groupby(['fecha_str', 'cuenta', 'importe_abs']).agg({
-                                'importe': 'sum',
-                                'fuente': lambda x: list(x),
-                                'descripcion': 'first'
-                            }).reset_index()
-                            
-                            duplicados['num_fuentes'] = duplicados['fuente'].apply(len)
-                            posibles_duplicados = duplicados[duplicados['num_fuentes'] > 1]
-                            
-                            if not posibles_duplicados.empty:
-                                st.error(f"⚠️ Encontrados {len(posibles_duplicados)} posibles duplicados:")
-                                st.dataframe(posibles_duplicados[['fecha_str', 'cuenta', 'descripcion', 'importe_abs', 'fuente']], 
-                                           use_container_width=True)
-                                return posibles_duplicados
-                            else:
-                                st.success("✅ No se detectaron duplicados obvios")
-                            
-                            # === TOP 10 GASTOS ===
-                            st.subheader("💸 Top 10 Gastos Más Grandes")
-                            
-                            top_gastos = df_otros.groupby(['cuenta', 'descripcion'])['importe'].sum().reset_index()
-                            top_gastos['importe_abs'] = top_gastos['importe'].abs()
-                            top_gastos = top_gastos.nlargest(10, 'importe_abs')[['cuenta', 'descripcion', 'importe']]
-                            
-                            st.dataframe(top_gastos, use_container_width=True)
-                            
-                            return None
-                        
-                        duplicados_encontrados = diagnose_otros_gastos_explotacion(df_data)
-                        
-                        if duplicados_encontrados is not None and not duplicados_encontrados.empty:
-                            st.markdown("---")
-                            if st.button("🔧 Corregir Duplicados Otros Gastos", key="fix_otros"):
-                                df_fixed = fix_otros_gastos_duplicates(df_data)
-                                st.session_state.df_pl_consolidated = df_fixed
-                                st.success("✅ Duplicados corregidos. Presiona 'Actualizar P&L' para ver los cambios.")
-                else:
-                    st.warning("No hay datos cargados para diagnosticar")
-            else:
-                st.warning("Primero carga los datos usando 'Actualizar P&L'")
-
-    with col_diag3:
-        if st.button("📊 Diagnóstico Completo", type="secondary"):
-            if st.session_state.get("pl_data_updated", False):
-                df_data = st.session_state.get("df_pl_consolidated", pd.DataFrame())
-                if not df_data.empty:
-                    with st.expander("📋 Diagnóstico Completo de Todas las Categorías", expanded=True):
-                        # Función de diagnóstico completo
-                        def diagnose_all_main_categories(df_consolidated: pd.DataFrame):
-                            """
-                            Diagnóstico comparativo de todas las categorías principales
-                            """
-                            st.subheader("📊 Diagnóstico Comparativo - Todas las Categorías")
-                            
-                            if df_consolidated.empty:
-                                st.warning("No hay datos para diagnosticar")
-                                return
-                            
-                            # Totales esperados del Excel
-                            expected_totals = {
-                                "Aprovisionamientos": -9012.02,
-                                "Gastos de personal": -52201.39,
-                                "Otros gastos de explotación": -275769.55,
-                                "Gastos financieros": -890.53,
-                                "Diferencias de cambio": 10628.19,
-                                "Otros resultados": 259.36,
-                                "Ingresos financieros": 0.18,
-                                "Ingresos": 2318450.97
-                            }
-                            
-                            # Totales obtenidos
-                            obtained_totals = df_consolidated.groupby("categoria")["importe"].sum().to_dict()
-                            
-                            # Crear análisis detallado
-                            analysis_data = []
-                            total_difference = 0
-                            
-                            for categoria, expected in expected_totals.items():
-                                obtained = obtained_totals.get(categoria, 0)
-                                difference = obtained - expected
-                                total_difference += abs(difference)
-                                percentage_diff = (difference / expected * 100) if expected != 0 else 0
-                                
-                                # Determinar nivel de problema
-                                if abs(difference) < 100:
-                                    level = "✅ CORRECTO"
-                                    priority = 1
-                                elif abs(difference) < 1000:
-                                    level = "⚠️ MENOR"
-                                    priority = 2
-                                elif abs(difference) < 10000:
-                                    level = "🔶 MEDIO"
-                                    priority = 3
-                                else:
-                                    level = "🚨 CRÍTICO"
-                                    priority = 4
-                                
-                                analysis_data.append({
-                                    "Categoría": categoria,
-                                    "Esperado": f"{expected:,.2f} €",
-                                    "Obtenido": f"{obtained:,.2f} €",
-                                    "Diferencia": f"{difference:,.2f} €",
-                                    "% Diferencia": f"{percentage_diff:.1f}%",
-                                    "Nivel": level,
-                                    "Prioridad": priority
-                                })
-                            
-                            # Ordenar por prioridad
-                            analysis_df = pd.DataFrame(analysis_data).sort_values(['Prioridad'], ascending=[False])
-                            
-                            st.dataframe(analysis_df[['Categoría', 'Esperado', 'Obtenido', 'Diferencia', '% Diferencia', 'Nivel']], 
-                                        use_container_width=True)
-                            
-                            # Resumen general
-                            st.subheader("📈 Resumen del Diagnóstico")
-                            
-                            col1, col2, col3 = st.columns(3)
-                            
-                            with col1:
-                                criticos = len(analysis_df[analysis_df['Prioridad'] == 4])
-                                st.metric("🚨 Problemas Críticos", criticos)
-                                
-                            with col2:
-                                medios = len(analysis_df[analysis_df['Prioridad'] == 3])
-                                st.metric("🔶 Problemas Medios", medios)
-                                
-                            with col3:
-                                menores = len(analysis_df[analysis_df['Prioridad'] == 2])
-                                st.metric("⚠️ Problemas Menores", menores)
-                            
-                            # Plan de acción
-                            st.subheader("🎯 Plan de Acción Recomendado")
-                            
-                            for _, row in analysis_df.iterrows():
-                                if row['Prioridad'] >= 3:  # Solo problemas medios y críticos
-                                    categoria = row['Categoría']
-                                    
-                                    if categoria == "Aprovisionamientos":
-                                        st.warning(f"🎯 **{categoria}**: Usar botón 'Diagnosticar Aprovisionamientos'")
-                                    elif categoria == "Otros gastos de explotación":
-                                        st.warning(f"🎯 **{categoria}**: Usar botón 'Diagnosticar Otros Gastos'")
-                                    elif categoria == "Gastos de personal":
-                                        st.warning(f"🎯 **{categoria}**: Verificar nóminas y cargas sociales")
-                                    elif categoria == "Ingresos":
-                                        st.warning(f"🎯 **{categoria}**: Verificar facturas de venta")
-                                    else:
-                                        st.info(f"🎯 **{categoria}**: Revisar clasificación")
-                            
-                            if total_difference < 1000:
-                                st.success("🎉 ¡Excelente! Todas las categorías están muy cerca de los valores esperados.")
-                            elif total_difference < 10000:
-                                st.warning("⚠️ Hay algunas diferencias que requieren atención.")
-                            else:
-                                st.error("🚨 Hay diferencias significativas que requieren investigación urgente.")
-                        
-                        diagnose_all_main_categories(df_data)
-                else:
-                    st.warning("No hay datos cargados para diagnosticar")
-            else:
-                st.warning("Primero carga los datos usando 'Actualizar P&L'")
-
-    # Función auxiliar para corregir duplicados en otros gastos
-    def fix_otros_gastos_duplicates(df_consolidated: pd.DataFrame):
-        """
-        Función para corregir duplicados en otros gastos de explotación
-        """
-        if df_consolidated.empty:
-            return df_consolidated
-        
-        # Crear copia para no modificar el original
-        df_fixed = df_consolidated.copy()
-        
-        # Filtrar otros gastos de explotación
-        df_otros = df_fixed[df_fixed["categoria"] == "Otros gastos de explotación"].copy()
-        df_rest = df_fixed[df_fixed["categoria"] != "Otros gastos de explotación"].copy()
-        
-        if df_otros.empty:
-            return df_consolidated
-        
-        # Detectar duplicados
-        df_otros['fecha_str'] = df_otros['fecha'].dt.strftime('%Y-%m-%d')
-        df_otros['importe_abs'] = df_otros['importe'].abs()
-        df_otros['duplicate_key'] = df_otros['fecha_str'] + '_' + df_otros['cuenta'] + '_' + df_otros['importe_abs'].astype(str)
-        
-        # Remover duplicados manteniendo solo el del libro diario (más confiable)
-        df_otros['fuente_priority'] = df_otros['fuente'].map({
-            'Libro Diario': 1,
-            'Documento purchase': 2,
-            'Documento bill': 3,
-            'Documento expense': 4,
-            'Factura Venta': 5
-        })
-        
-        # Ordenar por prioridad y mantener solo el primero de cada grupo
-        df_otros_sorted = df_otros.sort_values(['duplicate_key', 'fuente_priority'])
-        df_otros_fixed = df_otros_sorted.groupby('duplicate_key').first().reset_index()
-        
-        # Eliminar columnas auxiliares
-        df_otros_fixed = df_otros_fixed.drop(['fecha_str', 'importe_abs', 'duplicate_key', 'fuente_priority'], axis=1)
-        
-        # Recombinar datos
-        df_result = pd.concat([df_rest, df_otros_fixed], ignore_index=True)
-        
-        return df_result
