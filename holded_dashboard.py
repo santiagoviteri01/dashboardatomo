@@ -1480,7 +1480,6 @@ def process_expenses_corrected(start_dt: datetime, end_dt: datetime, cliente_fil
 
 # ====== TAB 3: P&L desde Holded - VERSION PARCHEADA ======
 # ====== TAB 3: P&L desde Holded - VERSION CORREGIDA COMPLETA ======
-# ====== TAB 3: P&L desde Holded - VERSION CORREGIDA COMPLETA ======
 with tab3:
     st.header("📑 P&L desde Holded (API)")
     st.caption("Calculado desde documentos de Holded y libro diario contable para mayor precisión.")
@@ -2258,6 +2257,174 @@ with tab3:
         m = re.match(r"^([0-9]{2,})", code)
         return m.group(1) if m else ""
 
+    # ====== FUNCIONES PARA P&L MENSUAL CON EVOLUCIÓN ======
+    def create_monthly_pl_analysis(df_consolidated: pd.DataFrame, inicio_dt: datetime, fin_dt: datetime):
+        """
+        Crea análisis P&L mensual con evolución temporal y gráficos
+        """
+        if df_consolidated.empty:
+            st.warning("No hay datos para el análisis mensual")
+            return None, None, None
+        
+        # Crear rango de meses para el período seleccionado
+        date_range = pd.date_range(start=inicio_dt, end=fin_dt, freq='MS')
+        month_labels = [d.strftime('%Y-%m') for d in date_range]
+        month_names = [d.strftime('%B %Y') for d in date_range]
+        
+        # Preparar datos por mes
+        df_monthly = df_consolidated.copy()
+        df_monthly['mes_num'] = df_monthly['fecha'].dt.to_period('M').astype(str)
+        
+        # Agrupar por mes y categoría
+        monthly_summary = df_monthly.groupby(['mes_num', 'categoria'])['importe'].sum().unstack(fill_value=0)
+        
+        # Asegurar que todos los meses están presentes
+        monthly_summary = monthly_summary.reindex(month_labels, fill_value=0)
+        
+        # Categorías principales
+        main_categories = [
+            "Ingresos", "Aprovisionamientos", "Gastos de personal",
+            "Otros gastos de explotación", "Ingresos financieros",
+            "Gastos financieros", "Diferencias de cambio", "Otros resultados"
+        ]
+        
+        # Añadir categorías faltantes con valor 0
+        for cat in main_categories:
+            if cat not in monthly_summary.columns:
+                monthly_summary[cat] = 0.0
+        
+        # Calcular métricas derivadas
+        monthly_summary["Margen Bruto"] = monthly_summary["Ingresos"] + monthly_summary["Aprovisionamientos"]
+        monthly_summary["Total Gastos Operativos"] = (monthly_summary["Gastos de personal"] + 
+                                                      monthly_summary["Otros gastos de explotación"])
+        monthly_summary["EBITDA"] = monthly_summary["Margen Bruto"] + monthly_summary["Total Gastos Operativos"]
+        monthly_summary["Resultado Operativo"] = monthly_summary["EBITDA"] + monthly_summary["Otros resultados"]
+        monthly_summary["Resultado Financiero"] = (monthly_summary["Ingresos financieros"] + 
+                                                  monthly_summary["Gastos financieros"] + 
+                                                  monthly_summary["Diferencias de cambio"])
+        monthly_summary["Resultado Neto"] = monthly_summary["Resultado Operativo"] + monthly_summary["Resultado Financiero"]
+        
+        # Calcular acumulado
+        cumulative_summary = monthly_summary.cumsum()
+        
+        # Reset index para trabajar mejor con los datos
+        monthly_summary.reset_index(inplace=True)
+        cumulative_summary.reset_index(inplace=True)
+        
+        # Añadir nombres de meses para mejor visualización
+        month_mapping = dict(zip(month_labels, month_names))
+        monthly_summary['Mes'] = monthly_summary['mes_num'].map(month_mapping)
+        cumulative_summary['Mes'] = cumulative_summary['mes_num'].map(month_mapping)
+        
+        return monthly_summary, cumulative_summary, month_names
+
+    def display_monthly_kpis(monthly_summary: pd.DataFrame, cumulative_summary: pd.DataFrame):
+        """
+        Muestra KPIs mensuales y acumulados
+        """
+        st.subheader("📊 KPIs - Último Mes vs Acumulado")
+        
+        # Último mes con datos
+        last_month_data = monthly_summary.iloc[-1]
+        cumulative_data = cumulative_summary.iloc[-1]
+        
+        # Crear métricas en columnas
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric(
+                "💰 Ingresos (Último Mes)", 
+                f"${last_month_data['Ingresos']:,.0f}",
+                help=f"Acumulado: ${cumulative_data['Ingresos']:,.0f}"
+            )
+            
+        with col2:
+            st.metric(
+                "📈 Margen Bruto (Último Mes)", 
+                f"${last_month_data['Margen Bruto']:,.0f}",
+                help=f"Acumulado: ${cumulative_data['Margen Bruto']:,.0f}"
+            )
+            
+        with col3:
+            st.metric(
+                "🎯 EBITDA (Último Mes)", 
+                f"${last_month_data['EBITDA']:,.0f}",
+                help=f"Acumulado: ${cumulative_data['EBITDA']:,.0f}"
+            )
+            
+        with col4:
+            st.metric(
+                "💎 Resultado Neto (Último Mes)", 
+                f"${last_month_data['Resultado Neto']:,.0f}",
+                help=f"Acumulado: ${cumulative_data['Resultado Neto']:,.0f}"
+            )
+
+    def create_evolution_charts(monthly_summary: pd.DataFrame):
+        """
+        Crea gráficos de evolución temporal
+        """
+        st.subheader("📈 Evolución Temporal - Gráficos Interactivos")
+        
+        # Preparar datos para gráficos
+        chart_data_monthly = monthly_summary[['Mes', 'Ingresos', 'Margen Bruto', 'EBITDA', 'Resultado Neto']].copy()
+        
+        # Convertir a formato largo para Altair
+        chart_data_long = chart_data_monthly.melt(
+            id_vars=['Mes'], 
+            value_vars=['Ingresos', 'Margen Bruto', 'EBITDA', 'Resultado Neto'],
+            var_name='Métrica', 
+            value_name='Valor'
+        )
+        
+        # Gráfico de líneas principal
+        line_chart = alt.Chart(chart_data_long).mark_line(point=True, strokeWidth=3).encode(
+            x=alt.X('Mes:O', title='Período', axis=alt.Axis(labelAngle=-45)),
+            y=alt.Y('Valor:Q', title='Importe ($)', axis=alt.Axis(format='$,.0f')),
+            color=alt.Color('Métrica:N', 
+                           scale=alt.Scale(range=['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728']),
+                           legend=alt.Legend(title="Métricas")),
+            tooltip=['Mes:O', 'Métrica:N', alt.Tooltip('Valor:Q', format='$,.0f')]
+        ).properties(
+            width=700,
+            height=400,
+            title="Evolución Mensual de Métricas Clave"
+        )
+        
+        st.altair_chart(line_chart, use_container_width=True)
+
+    def generate_monthly_pl_analysis(df_consolidated: pd.DataFrame, inicio_dt: datetime, fin_dt: datetime):
+        """
+        Función principal que genera todo el análisis mensual
+        """
+        if df_consolidated.empty:
+            st.warning("No hay datos para el análisis mensual")
+            return
+        
+        # Crear análisis mensual
+        monthly_summary, cumulative_summary, month_names = create_monthly_pl_analysis(df_consolidated, inicio_dt, fin_dt)
+        
+        if monthly_summary is None:
+            return
+        
+        # Mostrar KPIs
+        display_monthly_kpis(monthly_summary, cumulative_summary)
+        
+        # Mostrar gráficos
+        create_evolution_charts(monthly_summary)
+        
+        # Mostrar tabla mensual
+        st.subheader("📋 Tabla P&L Mensual")
+        
+        # Seleccionar columnas principales para mostrar
+        display_columns = ['Mes', 'Ingresos', 'Margen Bruto', 'EBITDA', 'Resultado Neto']
+        df_display = monthly_summary[display_columns].copy()
+        
+        # Formatear números
+        for col in ['Ingresos', 'Margen Bruto', 'EBITDA', 'Resultado Neto']:
+            df_display[col] = df_display[col].apply(lambda x: f"${x:,.0f}")
+        
+        st.dataframe(df_display, use_container_width=True, height=400)
+
     # ====== FUNCIÓN PARA GENERAR REPORTE PGC ======
     def generate_pgc_report(df_data: pd.DataFrame, inicio_dt: datetime, fin_dt: datetime):
         """Genera un reporte en formato PGC español"""
@@ -2473,107 +2640,17 @@ with tab3:
             st.exception(e)
             st.stop()
 
-    # ====== FUNCIONES PARA P&L MENSUAL CON EVOLUCIÓN ======
-    def create_monthly_pl_analysis(df_consolidated: pd.DataFrame, inicio_dt: datetime, fin_dt: datetime):
-        """
-        Crea análisis P&L mensual con evolución temporal y gráficos
-        """
-        if df_consolidated.empty:
-            st.warning("No hay datos para el análisis mensual")
-            return
-        
-        # Crear rango de meses para el período seleccionado
-        date_range = pd.date_range(start=inicio_dt, end=fin_dt, freq='MS')
-        month_labels = [d.strftime('%Y-%m') for d in date_range]
-        month_names = [d.strftime('%B %Y') for d in date_range]
-        
-        # Preparar datos por mes
-        df_monthly = df_consolidated.copy()
-        df_monthly['mes_num'] = df_monthly['fecha'].dt.to_period('M').astype(str)
-        
-        # Agrupar por mes y categoría
-        monthly_summary = df_monthly.groupby(['mes_num', 'categoria'])['importe'].sum().unstack(fill_value=0)
-        
-        # Asegurar que todos los meses están presentes
-        monthly_summary = monthly_summary.reindex(month_labels, fill_value=0)
-        
-        # Categorías principales
-        main_categories = [
-            "Ingresos", "Aprovisionamientos", "Gastos de personal",
-            "Otros gastos de explotación", "Ingresos financieros",
-            "Gastos financieros", "Diferencias de cambio", "Otros resultados"
-        ]
-        
-        # Añadir categorías faltantes con valor 0
-        for cat in main_categories:
-            if cat not in monthly_summary.columns:
-                monthly_summary[cat] = 0.0
-        
-        # Calcular métricas derivadas
-        monthly_summary["Margen Bruto"] = monthly_summary["Ingresos"] + monthly_summary["Aprovisionamientos"]
-        monthly_summary["Total Gastos Operativos"] = (monthly_summary["Gastos de personal"] + 
-                                                      monthly_summary["Otros gastos de explotación"])
-        monthly_summary["EBITDA"] = monthly_summary["Margen Bruto"] + monthly_summary["Total Gastos Operativos"]
-        monthly_summary["Resultado Operativo"] = monthly_summary["EBITDA"] + monthly_summary["Otros resultados"]
-        monthly_summary["Resultado Financiero"] = (monthly_summary["Ingresos financieros"] + 
-                                                  monthly_summary["Gastos financieros"] + 
-                                                  monthly_summary["Diferencias de cambio"])
-        monthly_summary["Resultado Neto"] = monthly_summary["Resultado Operativo"] + monthly_summary["Resultado Financiero"]
-        
-        # Calcular acumulado
-        cumulative_summary = monthly_summary.cumsum()
-        
-        # Reset index para trabajar mejor con los datos
-        monthly_summary.reset_index(inplace=True)
-        cumulative_summary.reset_index(inplace=True)
-        
-        # Añadir nombres de meses para mejor visualización
-        month_mapping = dict(zip(month_labels, month_names))
-        monthly_summary['Mes'] = monthly_summary['mes_num'].map(month_mapping)
-        cumulative_summary['Mes'] = cumulative_summary['mes_num'].map(month_mapping)
-        
-        return monthly_summary, cumulative_summary, month_names
-
-    def display_monthly_kpis(monthly_summary: pd.DataFrame, cumulative_summary: pd.DataFrame):
-        """
-        Muestra KPIs mensuales y acumulados
-        """
-        st.subheader("📊 KPIs - Último Mes vs Acumulado")
-        
-        # Último mes con datos
-        last_month_data = monthly_summary.iloc[-1]
-        cumulative_data = cumulative_summary.iloc[-1]
-        
-        # Crear métricas en columnas
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric(
-                "💰 Ingresos (Último Mes)", 
-                f"${last_month_data['Ingresos']:,.0f}",
-                help=f"Acumulado: ${cumulative_data['Ingresos']:,.0f}"
-            )
-            
-        with col2:
-            st.metric(
-                "📈 Margen Bruto (Último Mes)", 
-                f"${last_month_data['Margen Bruto']:,.0f}",
-                help=f"Acumulado: ${cumulative_data['Margen Bruto']:,.0f}"
-            )
-            
-        with col3:
-            st.metric(
-                "🎯 EBITDA (Último Mes)", 
-                f"${last_month_data['EBITDA']:,.0f}",
-                help=f"Acumulado: ${cumulative_data['EBITDA']:,.0f}"
-            )
-            
-        with col4:
-            st.metric(
-                "💎 Resultado Neto (Último Mes)", 
-                f"${last_month_data['Resultado Neto']:,.0f}",
-                help=f"Acumulado: ${cumulative_
-        if st.session_state.get("pl_data_updated")=False:
+    # ====== MOSTRAR RESULTADOS ======
+    tab_pgc, tab_actual, tab_mensual = st.tabs(["📋 Formato PGC", "📊 Dashboard Actual", "📅 Análisis Mensual"])
+    
+    with tab_pgc:
+        if st.session_state.get("pl_data_updated", False):
+            df_data = st.session_state.get("df_pl_consolidated", pd.DataFrame())
+            if not df_data.empty:
+                generate_pgc_report(df_data, inicio_dt, fin_dt)
+    
+    with tab_actual:
+        if st.session_state.get("pl_data_updated", False):
             df_data = st.session_state.get("df_pl_consolidated", pd.DataFrame())
             if not df_data.empty:
                 df_pl_summary = df_data.groupby(["periodo", "categoria"])["importe"].sum().unstack(fill_value=0).reset_index()
@@ -2684,6 +2761,22 @@ with tab3:
                             st.altair_chart(chart_cat, use_container_width=True)
                     else:
                         st.info("No hay datos que coincidan con los filtros seleccionados.")
+            else:
+                st.warning("⚠️ No hay datos consolidados disponibles.")
+        else:
+            st.info("👆 Usa los filtros del sidebar y presiona 'Actualizar P&L' para cargar los datos.")
+    
+    with tab_mensual:
+        if st.session_state.get("pl_data_updated", False):
+            df_data = st.session_state.get("df_pl_consolidated", pd.DataFrame())
+            if not df_data.empty:
+                # Verificar que hay más de un mes de datos
+                meses_unicos = df_data['fecha'].dt.to_period('M').nunique()
+                
+                if meses_unicos > 1:
+                    generate_monthly_pl_analysis(df_data, inicio_dt, fin_dt)
+                else:
+                    st.info("📅 El análisis mensual requiere datos de al menos 2 meses. Selecciona un período más amplio.")
             else:
                 st.warning("⚠️ No hay datos consolidados disponibles.")
         else:
