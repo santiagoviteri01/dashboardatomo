@@ -1479,119 +1479,784 @@ def process_expenses_corrected(start_dt: datetime, end_dt: datetime, cliente_fil
     return processed_lines
 
 # ====== TAB 3: P&L desde Holded - VERSION PARCHEADA ======
+# ====== TAB 3: P&L desde Holded - VERSION CORREGIDA COMPLETA ======
 with tab3:
     st.header("📑 P&L desde Holded (API)")
     st.caption("Calculado desde documentos de Holded y libro diario contable para mayor precisión.")
-    def process_expenses_corrected(inicio_dt: datetime, fin_dt: datetime, cliente_pl: str):
-        """Procesa todos los tipos de gastos de manera robusta"""
-        gastos_data = []
+
+    # ====== MAPEO ESPECÍFICO DE CUENTAS BASADO EN EL EXCEL ======
+    ACCOUNT_MAPPING = {
+        # APROVISIONAMIENTOS
+        "60700017": ("Aprovisionamientos", "Trabajos realizados por AD CONSULTING Bet593"),
         
-        # 1. COMPRAS DIRECTAS (purchase/bill/expense)
-        best_kind = st.session_state.get("best_purchase_kind", "purchase")
+        # GASTOS DE PERSONAL
+        "64000000": ("Gastos de personal", "Sueldos y salarios"),
+        "64100000": ("Gastos de personal", "Indemnizaciones"),
+        "64200000": ("Gastos de personal", "Seguridad Social a cargo de la empresa"),
+        "64900000": ("Gastos de personal", "Otros gastos sociales"),
         
-        # Si ya tenemos df_purchases cargado desde el probe
-        if 'best_df' in locals() and not best_df.empty:
-            df_purchases = best_df.copy()
+        # OTROS GASTOS DE EXPLOTACIÓN - Servicios exteriores
+        "62100000": ("Otros gastos de explotación", "Alquiler vehículos"),
+        "62100001": ("Otros gastos de explotación", "Alquiler apartamentos turísticos"),
+        "62100002": ("Otros gastos de explotación", "Renting Lexus kinto ONe"),
+        "62200001": ("Otros gastos de explotación", "Mantenimiento Holded"),
+        "62200002": ("Otros gastos de explotación", "Hostings"),
+        "62300001": ("Otros gastos de explotación", "Servicios de profesionales - Sensus Consultoria"),
+        "62300002": ("Otros gastos de explotación", "Servicios de profesionales - Notarios Registros y FNMT"),
+        "62300004": ("Otros gastos de explotación", "Servicios de profesionales Abogados"),
+        "62300005": ("Otros gastos de explotación", "Servicios de profesionales Recruting"),
+        "62300008": ("Otros gastos de explotación", "Servicios profesionales JUNIOR CALZADILLA"),
+        "62300020": ("Otros gastos de explotación", "Servicios de profesionales TECHNOURCE"),
+        "62300021": ("Otros gastos de explotación", "Servicios de profesionales ITMA"),
+        "62300024": ("Otros gastos de explotación", "Servicios de profesionales Informaticos"),
+        "62400000": ("Otros gastos de explotación", "Transportes"),
+        "62500000": ("Otros gastos de explotación", "Primas de seguros"),
+        "62600001": ("Otros gastos de explotación", "Servicios bancarios CAIXABANK"),
+        "62600002": ("Otros gastos de explotación", "Servicios bancarios BBVA"),
+        "62600003": ("Otros gastos de explotación", "Servicios bancarios BINANCE"),
+        "62700000": ("Otros gastos de explotación", "Publicidad propaganda y relaciones públicas"),
+        "62900001": ("Otros gastos de explotación", "Software y Licencias"),
+        "62900002": ("Otros gastos de explotación", "Material oficina y consumibles"),
+        "62900003": ("Otros gastos de explotación", "GTOS VIAJES hotelesvuelosetc"),
+        "62900004": ("Otros gastos de explotación", "DIETAS"),
+        "62900005": ("Otros gastos de explotación", "DESPLAZAMIENTO Taxi peajes etc"),
+        "62900006": ("Otros gastos de explotación", "Gasoil"),
+        
+        # TRIBUTOS
+        "63100000": ("Otros gastos de explotación", "Otros tributos"),
+        
+        # OTROS RESULTADOS
+        "77800000": ("Otros resultados", "Ingresos excepcionales"),
+        "67800000": ("Otros resultados", "Gastos excepcionales"),
+        
+        # INGRESOS FINANCIEROS
+        "76900000": ("Ingresos financieros", "Otros ingresos financieros"),
+        
+        # GASTOS FINANCIEROS
+        "66230000": ("Gastos financieros", "Intereses de deudas con entidades de crédito"),
+        "66240000": ("Gastos financieros", "Intereses de deudas otras empresas"),
+        
+        # DIFERENCIAS DE CAMBIO
+        "66800000": ("Diferencias de cambio", "Diferencias negativas de cambio"),
+        "76800000": ("Diferencias de cambio", "Diferencias positivas de cambio"),
+        
+        # INGRESOS (principales cuentas del Excel)
+        "70500000": ("Ingresos", "Prestaciones de servicios (Licencia Internacional)"),
+        "70500002": ("Ingresos", "Prestación de servicios Descuento torneos BET593"),
+        "70500005": ("Ingresos", "Prestación de servicios Descuento torneos BET502"),
+        "70500006": ("Ingresos", "Prestación servicios BET502 - METRONIA"),
+        "70500008": ("Ingresos", "Prestación servicios BET593 - METRONIA"),
+        "70500009": ("Ingresos", "Prestación servicios BET593 - LOTTERY"),
+        "70500010": ("Ingresos", "Prestación servicios BET593 - OCTAVIAN SRL"),
+        "70500011": ("Ingresos", "Prestación servicios BET593 - VITAL GAMES PROJECT SLOT SRL"),
+        "70500013": ("Ingresos", "Prestación servicios BET593 - APOLLO SOFTSRO"),
+        "70500014": ("Ingresos", "Prestación servicios BET593 - PSM TECH Srl"),
+        "70500015": ("Ingresos", "Prestación servicios BET593 - SEVEN ABC SOLUTION CH"),
+        "70500016": ("Ingresos", "Prestación servicios BET593 - PROJEKT SERVICE SRL"),
+        "70500017": ("Ingresos", "Prestación servicios BET593 - MYMOON LTD"),
+        "70500018": ("Ingresos", "Prestación servicios BET593 - WORLDMATCHSRL"),
+        "70500019": ("Ingresos", "Prestación servicios BET593 - ARRISE SOLUTIONS LIMITED"),
+    }
+
+    # ====== FUNCIONES AUXILIARES PARA HOLDED API ======
+    import unicodedata, re
+
+    @st.cache_data(ttl=300)
+    def get_holded_token():
+        """Obtener token de autenticación de Holded"""
+        try:
+            token = "fafbb8191b37e6b696f192e70b4a198c"
+            return token
+        except Exception as e:
+            st.warning(f"Error obteniendo token de Holded: {e}.")
+            return None
+
+    @st.cache_data(ttl=60)
+    def list_documents_corrected(doc_type: str, start_dt: datetime, end_dt: datetime, page_size=200):
+        """Lista documentos con filtros de fecha corregidos"""
+        url = f"https://api.holded.com/api/invoicing/v1/documents/{doc_type}"
+        headers = {"accept": "application/json", "key": get_holded_token()}
+        params = {
+            "starttmp": int(start_dt.timestamp()),
+            "endtmp": int(end_dt.timestamp()),
+            "sort": "created-asc",
+            "limit": page_size
+        }
+        try:
+            r = requests.get(url, headers=headers, params=params, timeout=30)
+            if r.status_code == 200:
+                data = r.json()
+                return pd.DataFrame(data) if isinstance(data, list) else pd.DataFrame()
+            else:
+                st.error(f"Error {r.status_code} en {doc_type}: {r.text[:300]}")
+                return pd.DataFrame()
+        except Exception as e:
+            st.error(f"Error conectando con Holded ({doc_type}): {e}")
+            return pd.DataFrame()
+
+    @st.cache_data(ttl=60)
+    def get_document_detail_corrected(doc_type: str, doc_id: str):
+        """
+        Trae el detalle de un documento de Holded.
+        Fallback: si el doc_type falla, intenta con 'purchase'.
+        """
+        if not doc_id:
+            return {}
+        headers = {"accept": "application/json", "key": get_holded_token()}
+
+        # 1) Intento con el tipo indicado
+        url = f"https://api.holded.com/api/invoicing/v1/documents/{doc_type}/{doc_id}"
+        try:
+            r = requests.get(url, headers=headers, timeout=30)
+            if r.status_code == 200:
+                return r.json()
+        except Exception:
+            pass
+
+        # 2) Fallback con 'purchase'
+        if doc_type != "purchase":
+            try:
+                url2 = f"https://api.holded.com/api/invoicing/v1/documents/purchase/{doc_id}"
+                r2 = requests.get(url2, headers=headers, timeout=30)
+                if r2.status_code == 200:
+                    return r2.json()
+            except Exception:
+                pass
+
+        return {}
+
+    @st.cache_data(ttl=60)
+    def list_daily_ledger_corrected(start_dt: datetime, end_dt: datetime):
+        """Obtiene libro diario con filtros de fecha mejorados"""
+        url = "https://api.holded.com/api/accounting/v1/dailyledger"
+        headers = {"accept": "application/json", "key": get_holded_token()}
+        date_formats = [
+            {"from": start_dt.strftime("%Y-%m-%d"), "to": end_dt.strftime("%Y-%m-%d")},
+            {"dateFrom": start_dt.strftime("%Y-%m-%d"), "dateTo": end_dt.strftime("%Y-%m-%d")},
+            {"starttmp": int(start_dt.timestamp()), "endtmp": int(end_dt.timestamp())},
+        ]
+        for params in date_formats:
+            try:
+                r = requests.get(url, headers=headers, params=params, timeout=30)
+                if r.status_code == 200:
+                    data = r.json()
+                    if data:
+                        return data
+            except Exception:
+                continue
+        # Fallback: traer todo y filtrar local
+        try:
+            r = requests.get(url, headers=headers, timeout=30)
+            if r.status_code == 200:
+                data = r.json()
+                out = []
+                for d in data:
+                    dt = d.get("date")
+                    try:
+                        dtp = pd.to_datetime(dt, unit="s") if isinstance(dt, (int, float)) else pd.to_datetime(dt)
+                    except Exception:
+                        continue
+                    if start_dt <= dtp <= end_dt:
+                        out.append(d)
+                return out
+        except Exception as e:
+            st.warning(f"Error obteniendo libro diario: {e}")
+        return []
+
+    # ====== CLASIFICADOR MEJORADO CON MAPEO ESPECÍFICO ======
+    def classify_account_with_mapping(code: str, name: str = "") -> tuple:
+        """
+        Clasifica cuenta usando primero el mapeo específico, luego reglas generales.
+        Retorna: (categoria, descripcion_completa)
+        """
+        # Limpiar código
+        code_clean = str(code or "").strip().replace(" ", "")
+        
+        # 1. Buscar en mapeo específico primero
+        if code_clean in ACCOUNT_MAPPING:
+            categoria, descripcion = ACCOUNT_MAPPING[code_clean]
+            return categoria, f"{code_clean} - {descripcion}"
+        
+        # 2. Reglas generales por prefijo
+        name_clean = str(name or "").lower()
+        
+        # Extraer solo dígitos iniciales
+        digits = re.match(r'^(\d{2,})', code_clean)
+        code_num = digits.group(1) if digits else ""
+        
+        if code_num.startswith("768") or code_num.startswith("668"):
+            return "Diferencias de cambio", f"{code_clean} - {name}"
+        elif code_num.startswith("76"):
+            return "Ingresos financieros", f"{code_clean} - {name}"
+        elif code_num.startswith("66"):
+            return "Gastos financieros", f"{code_clean} - {name}"
+        elif code_num.startswith("64"):
+            return "Gastos de personal", f"{code_clean} - {name}"
+        elif code_num.startswith(("60", "61")):
+            return "Aprovisionamientos", f"{code_clean} - {name}"
+        elif code_num.startswith(("62", "63", "65", "68", "69")):
+            return "Otros gastos de explotación", f"{code_clean} - {name}"
+        elif code_num.startswith("77"):
+            return "Otros resultados", f"{code_clean} - {name}"
+        elif code_num.startswith(("70", "71", "72", "73", "74", "75")):
+            return "Ingresos", f"{code_clean} - {name}"
+        elif code_num.startswith("7"):
+            return "Ingresos", f"{code_clean} - {name}"
+        elif code_num.startswith("6"):
+            return "Otros gastos de explotación", f"{code_clean} - {name}"
+        
+        # 3. Fallback por nombre
+        if any(w in name_clean for w in ["nomina", "sueldo", "salario", "personal", "seguridad social"]):
+            return "Gastos de personal", f"{code_clean} - {name}"
+        elif any(w in name_clean for w in ["interes", "financiero", "prestamo", "credito"]):
+            return "Gastos financieros", f"{code_clean} - {name}"
+        elif "cambio" in name_clean or "divisa" in name_clean:
+            return "Diferencias de cambio", f"{code_clean} - {name}"
+        elif any(w in name_clean for w in ["compra", "suministro", "materia prima"]):
+            return "Aprovisionamientos", f"{code_clean} - {name}"
+        
+        return "Otros gastos de explotación", f"{code_clean} - {name or 'Sin descripción'}"
+
+    # ====== BUSCADOR COMPLETO DE GASTOS ======
+    @st.cache_data(ttl=60)
+    def get_comprehensive_expenses(start_dt: datetime, end_dt: datetime):
+        """
+        Búsqueda exhaustiva de gastos en todos los endpoints posibles
+        """
+        headers = {"accept": "application/json", "key": get_holded_token()}
+        all_expenses = []
+        
+        # Endpoints a probar para gastos
+        expense_endpoints = [
+            "purchase", "bill", "expense", "receipt", 
+            "purchaseorder", "creditnote"
+        ]
+        
+        for endpoint in expense_endpoints:
+            try:
+                st.info(f"🔍 Buscando gastos en: {endpoint}")
+                url = f"https://api.holded.com/api/invoicing/v1/documents/{endpoint}"
+                
+                # Diferentes formatos de filtros de fecha
+                date_filters = [
+                    {"starttmp": int(start_dt.timestamp()), "endtmp": int(end_dt.timestamp())},
+                    {"dateFrom": start_dt.strftime("%Y-%m-%d"), "dateTo": end_dt.strftime("%Y-%m-%d")},
+                    {"from": start_dt.strftime("%Y-%m-%d"), "to": end_dt.strftime("%Y-%m-%d")},
+                    {}  # Sin filtros
+                ]
+                
+                found_data = False
+                for date_filter in date_filters:
+                    params = {"limit": 500, "sort": "created-asc", **date_filter}
+                    
+                    try:
+                        response = requests.get(url, headers=headers, params=params, timeout=30)
+                        if response.status_code == 200:
+                            data = response.json()
+                            if isinstance(data, list) and data:
+                                # Filtrar por fecha si no se usaron filtros
+                                if not date_filter:
+                                    filtered_data = []
+                                    for doc in data:
+                                        doc_date = doc.get("date")
+                                        if doc_date:
+                                            try:
+                                                if isinstance(doc_date, (int, float)):
+                                                    parsed_date = pd.to_datetime(doc_date, unit='s')
+                                                else:
+                                                    parsed_date = pd.to_datetime(doc_date)
+                                                
+                                                if start_dt <= parsed_date <= end_dt:
+                                                    filtered_data.append(doc)
+                                            except:
+                                                continue
+                                    data = filtered_data
+                                
+                                if data:
+                                    st.success(f"✅ {endpoint}: {len(data)} documentos")
+                                    all_expenses.extend([(endpoint, doc) for doc in data])
+                                    found_data = True
+                                    break
+                    except Exception as e:
+                        continue
+                        
+                if not found_data:
+                    st.warning(f"⚠️ No se encontraron datos en {endpoint}")
+                    
+            except Exception as e:
+                st.error(f"❌ Error en {endpoint}: {str(e)}")
+        
+        return all_expenses
+
+    # ====== PARSER MEJORADO DE LÍNEAS DE DOCUMENTOS ======
+    def parse_document_lines_enhanced(endpoint_type: str, doc_json: dict):
+        """
+        Parser mejorado que maneja diferentes estructuras de documentos
+        """
+        lines = []
+        if not doc_json:
+            return lines
+            
+        # Obtener fecha del documento
+        raw_date = doc_json.get("date")
+        if isinstance(raw_date, (int, float)):
+            fecha = pd.to_datetime(raw_date, unit='s', errors='coerce')
         else:
-            # Fallback: cargar con método original
-            df_purchases = list_purchases_any(inicio_dt, fin_dt)
+            fecha = pd.to_datetime(raw_date, errors='coerce')
         
-        if not df_purchases.empty:
-            for _, purchase in df_purchases.iterrows():
-                cliente = purchase.get("contactName", "Sin nombre")
-                if cliente_pl != "Todo" and cliente != cliente_pl:
+        if pd.isna(fecha):
+            return lines
+        
+        # Buscar líneas en múltiples campos
+        items_keys = ["items", "lines", "concepts", "expenses", "details", "entries"]
+        items = []
+        
+        for key in items_keys:
+            if key in doc_json and doc_json[key]:
+                items = doc_json[key]
+                break
+        
+        if items and isinstance(items, list):
+            # Procesar líneas detalladas
+            for item in items:
+                if not isinstance(item, dict):
                     continue
                     
-                # Obtener detalle del documento
-                doc_id = purchase.get("id")
-                if doc_id:
-                    doc_detail = get_document_detail_corrected(best_kind, str(doc_id))
-                    purchase_lines = parse_purchase_lines_corrected(doc_detail)
+                # Obtener importe de la línea
+                amount = 0.0
+                amount_keys = ["subTotal", "subtotal", "untaxedAmount", "netAmount", 
+                              "base", "amount", "total", "value", "import"]
+                
+                for key in amount_keys:
+                    if key in item and item[key] is not None:
+                        try:
+                            amount = float(item[key])
+                            break
+                        except:
+                            continue
+                
+                # Si no hay importe directo, calcular qty * price
+                if amount == 0:
+                    try:
+                        qty = float(item.get("quantity", item.get("qty", 1)))
+                        price_keys = ["unitPrice", "price", "unitprice", "unit_cost", "unitCost"]
+                        price = 0
+                        for key in price_keys:
+                            if key in item and item[key] is not None:
+                                price = float(item[key])
+                                break
+                        amount = qty * price
+                    except:
+                        continue
+                
+                if amount == 0:
+                    continue
                     
-                    for fecha, account_code, account_name, amount in purchase_lines:
+                # Obtener código y nombre de cuenta
+                account_code = ""
+                account_name = ""
+                
+                code_keys = ["expenseAccountCode", "accountCode", "expenseAccountId", 
+                            "accountId", "account", "expenseAccount"]
+                for key in code_keys:
+                    if key in item and item[key]:
+                        account_code = str(item[key])
+                        break
+                
+                name_keys = ["accountName", "name", "description", "concept", "title"]
+                for key in name_keys:
+                    if key in item and item[key]:
+                        account_name = str(item[key])
+                        break
+                
+                lines.append((fecha, account_code, account_name, float(amount)))
+        
+        else:
+            # Si no hay líneas detalladas, usar el total del documento
+            total = 0.0
+            total_keys = ["subTotal", "subtotal", "untaxedAmount", "total", 
+                         "amount", "netAmount", "baseAmount"]
+            
+            for key in total_keys:
+                if key in doc_json and doc_json[key] is not None:
+                    try:
+                        total = float(doc_json[key])
+                        break
+                    except:
+                        continue
+            
+            if total > 0:
+                # Inferir cuenta por proveedor o tipo de documento
+                account_code = infer_account_from_context(doc_json, endpoint_type)
+                account_name = f"Gasto {doc_json.get('contactName', 'sin proveedor')} - {endpoint_type}"
+                lines.append((fecha, account_code, account_name, float(total)))
+        
+        return lines
+
+    # ====== INFERENCIA DE CUENTA POR CONTEXTO ======
+    def infer_account_from_context(doc_json: dict, endpoint_type: str) -> str:
+        """
+        Infiere el código de cuenta basado en el proveedor y tipo de documento
+        """
+        supplier = str(doc_json.get("contactName", "")).lower()
+        description = str(doc_json.get("description", "")).lower()
+        
+        # Mapeo por proveedor conocido
+        supplier_mapping = {
+            "ad consulting": "60700017",
+            "holded": "62200001",
+            "caixabank": "62600001",
+            "bbva": "62600002",
+            "binance": "62600003",
+            "lexus": "62100002",
+            "technource": "62300020",
+            "itma": "62300021",
+            "sensus": "62300001",
+        }
+        
+        for key, account in supplier_mapping.items():
+            if key in supplier:
+                return account
+        
+        # Mapeo por palabras clave en descripción
+        keyword_mapping = {
+            "nomina": "64000000",
+            "sueldo": "64000000",
+            "salario": "64000000",
+            "seguridad social": "64200000",
+            "indemnizacion": "64100000",
+            "alquiler": "62100001",
+            "renting": "62100002",
+            "hosting": "62200002",
+            "mantenimiento": "62200001",
+            "abogado": "62300004",
+            "consultor": "62300001",
+            "transporte": "62400000",
+            "seguro": "62500000",
+            "banco": "62600001",
+            "publicidad": "62700000",
+            "software": "62900001",
+            "licencia": "62900001",
+            "viaje": "62900003",
+            "dieta": "62900004",
+            "combustible": "62900006",
+            "gasoil": "62900006",
+        }
+        
+        for keyword, account in keyword_mapping.items():
+            if keyword in description or keyword in supplier:
+                return account
+        
+        # Fallback por tipo de endpoint
+        endpoint_defaults = {
+            "purchase": "60000000",  # Compras
+            "bill": "62300000",      # Servicios profesionales
+            "expense": "62900000",   # Otros gastos
+            "receipt": "62900000",   # Otros gastos
+        }
+        
+        return endpoint_defaults.get(endpoint_type, "62900000")
+
+    # ====== VALIDACIÓN Y COMPARACIÓN ======
+    def validate_totals_against_expected(df_consolidated: pd.DataFrame):
+        """
+        Valida los totales obtenidos contra los esperados del Excel
+        """
+        st.subheader("🔍 Validación de Totales")
+        
+        # Totales esperados (del Excel)
+        expected_totals = {
+            "Aprovisionamientos": -9012.02,
+            "Gastos de personal": -52201.39,
+            "Otros gastos de explotación": -275769.55,
+            "Gastos financieros": -890.53,
+            "Diferencias de cambio": 10628.19,  # Neto positivo
+            "Otros resultados": 259.36,  # Neto (ingresos - gastos excepcionales)
+            "Ingresos financieros": 0.18,
+        }
+        
+        # Totales obtenidos
+        obtained_totals = df_consolidated.groupby("categoria")["importe"].sum().to_dict()
+        
+        # Crear tabla de comparación
+        comparison_data = []
+        total_diff = 0
+        
+        for categoria, expected in expected_totals.items():
+            obtained = obtained_totals.get(categoria, 0)
+            difference = obtained - expected
+            percentage_diff = (difference / expected * 100) if expected != 0 else 0
+            total_diff += abs(difference)
+            
+            status = "✅" if abs(difference) < 100 else "⚠️" if abs(difference) < 1000 else "❌"
+            
+            comparison_data.append({
+                "Categoría": categoria,
+                "Esperado": f"{expected:,.2f} €",
+                "Obtenido": f"{obtained:,.2f} €",
+                "Diferencia": f"{difference:,.2f} €",
+                "% Diff": f"{percentage_diff:.1f}%",
+                "Status": status
+            })
+        
+        df_comparison = pd.DataFrame(comparison_data)
+        st.dataframe(df_comparison, use_container_width=True)
+        
+        # Resumen de validación
+        if total_diff < 1000:
+            st.success(f"✅ Validación exitosa: Diferencia total < 1.000 € ({total_diff:,.2f} €)")
+        elif total_diff < 10000:
+            st.warning(f"⚠️ Validación parcial: Diferencia total = {total_diff:,.2f} €")
+        else:
+            st.error(f"❌ Validación fallida: Diferencia total = {total_diff:,.2f} €")
+        
+        return df_comparison
+
+    # ====== PROCESADOR PRINCIPAL CORREGIDO ======
+    def process_expenses_comprehensive(start_dt: datetime, end_dt: datetime, cliente_filter: str = "Todo"):
+        """
+        Procesador principal que combina libro diario + documentos
+        """
+        all_expense_lines = []
+        
+        st.subheader("📊 Procesamiento Comprehensivo de Gastos")
+        
+        # PASO 1: LIBRO DIARIO (FUENTE PRINCIPAL)
+        with st.expander("📚 Procesando Libro Diario", expanded=True):
+            st.info("🔍 Obteniendo entradas del libro diario...")
+            
+            ledger_entries = list_daily_ledger_corrected(start_dt, end_dt)
+            ledger_count = 0
+            
+            for entry in ledger_entries:
+                try:
+                    # Fecha
+                    entry_date = entry.get("date")
+                    if isinstance(entry_date, (int, float)):
+                        fecha = pd.to_datetime(entry_date, unit="s", errors="coerce")
+                    else:
+                        fecha = pd.to_datetime(entry_date, errors="coerce")
+                    
+                    if pd.isna(fecha):
+                        continue
+                    
+                    # Importe
+                    amount = entry.get("amount")
+                    if amount is None:
+                        debit = float(entry.get("debit", 0) or 0)
+                        credit = float(entry.get("credit", 0) or 0)
+                        amount = debit - credit
+                    else:
+                        amount = float(amount)
+                    
+                    if amount == 0:
+                        continue
+                    
+                    # Cuenta y clasificación
+                    account_code = str(entry.get("accountCode", "") or "")
+                    account_name = str(entry.get("accountName", "") or "")
+                    
+                    if not account_code:
+                        continue
+                    
+                    categoria, descripcion_completa = classify_account_with_mapping(account_code, account_name)
+                    
+                    # Cliente
+                    cliente_entry = (entry.get("contactName") or 
+                                   entry.get("thirdParty") or 
+                                   entry.get("customer") or 
+                                   "Libro Diario (sin cliente)")
+                    
+                    if cliente_filter != "Todo" and cliente_entry != cliente_filter:
+                        continue
+                    
+                    # Normalizar importe según categoría
+                    amount_norm = normalize_amount_by_category(categoria, amount)
+                    periodo = fecha.to_period("M").strftime("%Y-%m")
+                    
+                    all_expense_lines.append({
+                        "periodo": periodo,
+                        "fecha": fecha,
+                        "cliente": cliente_entry,
+                        "categoria": categoria,
+                        "importe": amount_norm,
+                        "cuenta": account_code,
+                        "descripcion": descripcion_completa,
+                        "fuente": "Libro Diario"
+                    })
+                    ledger_count += 1
+                    
+                except Exception as e:
+                    continue
+            
+            st.success(f"✅ Procesadas {ledger_count} entradas del libro diario")
+        
+        # PASO 2: DOCUMENTOS DE GASTOS (FUENTE COMPLEMENTARIA)
+        with st.expander("📄 Procesando Documentos de Gastos", expanded=True):
+            st.info("🔍 Obteniendo documentos de gastos...")
+            
+            expense_docs = get_comprehensive_expenses(start_dt, end_dt)
+            docs_count = 0
+            
+            # Obtener cuentas ya procesadas del libro diario para evitar duplicados
+            existing_accounts = set()
+            for line in all_expense_lines:
+                if line["cuenta"]:
+                    existing_accounts.add((line["fecha"].date(), line["cuenta"], abs(line["importe"])))
+            
+            for endpoint_type, doc in expense_docs:
+                try:
+                    # Filtrar por cliente
+                    if cliente_filter != "Todo":
+                        doc_cliente = doc.get("contactName", "")
+                        if doc_cliente != cliente_filter:
+                            continue
+                    
+                    # Obtener detalle del documento
+                    doc_id = str(doc.get("id", ""))
+                    if doc_id:
+                        detail = get_document_detail_corrected(endpoint_type, doc_id)
+                        if detail:
+                            doc = detail
+                    
+                    # Procesar líneas del documento
+                    doc_lines = parse_document_lines_enhanced(endpoint_type, doc)
+                    
+                    for fecha, account_code, account_name, amount in doc_lines:
                         if pd.isna(fecha) or amount == 0:
                             continue
-                            
-                        categoria = classify_account_corrected(account_code, account_name)
-                        amount_norm = normalize_amount_by_category(categoria, amount)
-                        periodo = fecha.to_period("M").strftime("%Y-%m")
                         
-                        gastos_data.append({
+                        # Evitar duplicados con libro diario
+                        line_key = (fecha.date(), account_code, abs(amount))
+                        if line_key in existing_accounts:
+                            continue
+                        
+                        categoria, descripcion_completa = classify_account_with_mapping(account_code, account_name)
+                        
+                        proveedor = doc.get("contactName", "Sin nombre")
+                        periodo = fecha.to_period("M").strftime("%Y-%m")
+                        amount_norm = normalize_amount_by_category(categoria, amount)
+                        
+                        all_expense_lines.append({
                             "periodo": periodo,
                             "fecha": fecha,
-                            "cliente": cliente,
+                            "cliente": proveedor,
                             "categoria": categoria,
                             "importe": amount_norm,
-                            "cuenta": account_code,
-                            "descripcion": account_name or f"{best_kind.title()} {purchase.get('docNumber', '')}"
+                            "cuenta": account_code or f"{endpoint_type.upper()}XXX",
+                            "descripcion": descripcion_completa,
+                            "fuente": f"Documento {endpoint_type}"
                         })
+                        docs_count += 1
+                        
+                except Exception as e:
+                    continue
+            
+            st.success(f"✅ Procesadas {docs_count} líneas de documentos")
         
-        return gastos_data
-    
-    # ====== CLASIFICADOR MEJORADO PARA TODAS LAS CUENTAS ======
-    def classify_account_corrected(code: str, name: str = "") -> str:
+        return all_expense_lines
+
+    # ====== FUNCIÓN PRINCIPAL MEJORADA ======
+    def process_pl_holded_comprehensive(inicio_dt: datetime, fin_dt: datetime, cliente_pl: str, usar_libro_diario: bool = True):
         """
-        Clasificador mejorado que incluye todas las cuentas del PGC español
+        Función principal que procesa P&L de forma comprehensiva
         """
-        code = _only_leading_digits(code)
-        name_clean = _strip_accents(str(name or "").lower())
+        all_data = []
         
-        # === DIFERENCIAS DE CAMBIO (prioridad máxima) ===
-        if (code.startswith("768") or code.startswith("668") or 
-            "cambio" in name_clean or "divisa" in name_clean):
-            return "Diferencias de cambio"
+        try:
+            # 1) INGRESOS (facturas de venta)
+            st.info("📥 Procesando ingresos...")
+            df_invoices = list_documents_corrected("invoice", inicio_dt, fin_dt)
+            
+            ingresos_data = []
+            if not df_invoices.empty:
+                for _, inv in df_invoices.iterrows():
+                    inv_date = inv.get("date")
+                    fecha = pd.to_datetime(inv_date, unit="s", errors="coerce") if isinstance(inv_date, (int, float)) else pd.to_datetime(inv_date, errors="coerce")
+                    if pd.isna(fecha):
+                        continue
+                        
+                    amount = 0.0
+                    for k in ("subTotal", "subtotal", "untaxedAmount", "total"):
+                        if k in inv and inv[k] is not None:
+                            try:
+                                amount = float(inv[k])
+                                break
+                            except:
+                                pass
+                    
+                    cliente = inv.get("contactName", "Sin nombre")
+                    if cliente_pl != "Todo" and cliente != cliente_pl:
+                        continue
+                    
+                    periodo = fecha.to_period("M").strftime("%Y-%m")
+                    amount_norm = normalize_amount_by_category("Ingresos", amount)
+                    
+                    ingresos_data.append({
+                        "periodo": periodo,
+                        "fecha": fecha,
+                        "cliente": cliente,
+                        "categoria": "Ingresos",
+                        "importe": amount_norm,
+                        "cuenta": "70XXX",
+                        "descripcion": f"Factura {inv.get('docNumber', '')}",
+                        "fuente": "Factura Venta"
+                    })
+            
+            st.success(f"✅ Procesados {len(ingresos_data)} ingresos")
+            all_data.extend(ingresos_data)
+            
+            # 2) GASTOS (usando función comprehensiva)
+            st.info("📤 Procesando gastos...")
+            gastos_data = process_expenses_comprehensive(inicio_dt, fin_dt, cliente_pl)
+            st.success(f"✅ Procesados {len(gastos_data)} gastos")
+            all_data.extend(gastos_data)
+            
+            # 3) CONSOLIDAR DATOS
+            df_consolidated = pd.DataFrame(all_data)
+            
+            if df_consolidated.empty:
+                st.warning("⚠️ No se encontraron datos en el período seleccionado")
+                return pd.DataFrame()
+            
+            # 4) VALIDAR CONTRA TOTALES ESPERADOS
+            validate_totals_against_expected(df_consolidated)
+            
+            # 5) MOSTRAR RESUMEN POR FUENTE
+            st.subheader("📊 Resumen por Fuente de Datos")
+            source_summary = df_consolidated.groupby(["fuente", "categoria"])["importe"].sum().unstack(fill_value=0)
+            st.dataframe(source_summary, use_container_width=True)
+            
+            return df_consolidated
+            
+        except Exception as e:
+            st.error(f"❌ Error en procesamiento comprehensivo: {str(e)}")
+            st.exception(e)
+            return pd.DataFrame()
+
+    # ====== UTILIDADES ADICIONALES ======
+    def normalize_amount_by_category(cat: str, amount: float) -> float:
+        """Normaliza importes según categoría"""
+        amount = float(amount or 0)
+        expense_cats = {"Aprovisionamientos", "Gastos de personal", "Otros gastos de explotación", "Gastos financieros"}
+        income_cats = {"Ingresos", "Ingresos financieros"}
         
-        # === INGRESOS FINANCIEROS ===
-        if code.startswith("76"):
-            return "Ingresos financieros"
-        
-        # === GASTOS FINANCIEROS ===
-        if code.startswith("66"):
-            return "Gastos financieros"
-        
-        # === GASTOS DE PERSONAL (64) ===
-        if (code.startswith("64") or 
-            any(w in name_clean for w in ["nomina", "sueldo", "salario", "personal", 
-                                          "seguridad social", "indemnizacion"])):
-            return "Gastos de personal"
-        
-        # === APROVISIONAMIENTOS (60, 61, 607 trabajos por terceros) ===
-        if (code.startswith(("60", "61")) or 
-            any(w in name_clean for w in ["compra", "suministro", "materia prima", 
-                                          "trabajos realizados", "outsourcing"])):
-            return "Aprovisionamientos"
-        
-        # === OTROS GASTOS DE EXPLOTACIÓN (62, 63, 65, 68, 69) ===
-        if (code.startswith(("62", "63", "65", "68", "69")) or
-            any(w in name_clean for w in ["alquiler", "renting", "mantenimiento", "hosting",
-                                          "profesionales", "abogado", "notario", "consultor",
-                                          "transporte", "seguro", "bancario", "publicidad",
-                                          "software", "licencia", "oficina", "viaje", "dieta",
-                                          "desplazamiento", "gasoil", "combustible", "tributo"])):
-            return "Otros gastos de explotación"
-        
-        # === OTROS RESULTADOS (77, 67) ===
-        if (code.startswith(("77", "67")) or
-            any(w in name_clean for w in ["excepcional", "extraordinario"])):
-            return "Otros resultados"
-        
-        # === INGRESOS (70-75) ===
-        if (code.startswith(("70", "71", "72", "73", "74", "75")) or
-            any(w in name_clean for w in ["venta", "prestacion", "ingreso", "facturacion"])):
-            return "Ingresos"
-        
-        # === FALLBACKS POR NOMBRE ===
-        if any(w in name_clean for w in ["interes", "financiero", "prestamo", "credito"]):
-            return "Gastos financieros"
-        
-        # === FALLBACK GENERAL ===
-        if code.startswith("7"):
-            return "Ingresos"
-        elif code.startswith("6"):
-            return "Otros gastos de explotación"
-        
-        return "Otros gastos de explotación"
-    
+        if cat in expense_cats:
+            return -abs(amount)
+        elif cat in income_cats:
+            return abs(amount)
+        else:
+            return amount  # Mantener signo original para diferencias de cambio y otros resultados
+
+    def _strip_accents(s: str) -> str:
+        s = str(s or "")
+        return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
+
+    def _only_leading_digits(code: str) -> str:
+        code = str(code or "").strip().replace("\xa0", " ")
+        m = re.match(r"^([0-9]{2,})", code)
+        return m.group(1) if m else ""
+
     # ====== FUNCIÓN PARA GENERAR REPORTE PGC ======
     def generate_pgc_report(df_data: pd.DataFrame, inicio_dt: datetime, fin_dt: datetime):
         """Genera un reporte en formato PGC español"""
@@ -1719,329 +2384,6 @@ with tab3:
                 file_name=f"PyG_PGC_{inicio_dt.strftime('%Y%m%d')}_{fin_dt.strftime('%Y%m%d')}.csv",
                 mime="text/csv"
             )
-    
-    # ====== FUNCIÓN AUXILIAR PARA MEJORAR LA EXTRACCIÓN DE LÍNEAS ======
-    def parse_purchase_lines_enhanced(doc_json: dict):
-        """Versión mejorada para extraer líneas de compra con más detalle"""
-        lines = []
-        if not doc_json:
-            return lines
-            
-        raw_date = doc_json.get("date")
-        fecha = pd.to_datetime(raw_date, unit='s', errors='coerce') if isinstance(raw_date, (int, float)) \
-                else pd.to_datetime(raw_date, errors='coerce')
-        
-        # Buscar líneas en múltiples campos
-        items_fields = ["items", "lines", "concepts", "details", "positions"]
-        items = []
-        
-        for field in items_fields:
-            if field in doc_json and doc_json[field]:
-                items = doc_json[field]
-                break
-        
-        if items:
-            for i, ln in enumerate(items):
-                # Extraer importe con múltiples fallbacks
-                amt = 0.0
-                amount_fields = ["subTotal", "subtotal", "untaxedAmount", "netAmount", 
-                               "base", "amount", "total", "value", "import"]
-                
-                for field in amount_fields:
-                    if field in ln and ln[field] is not None:
-                        try:
-                            amt = float(ln[field])
-                            break
-                        except:
-                            continue
-                
-                # Si no encontró importe, calcular por qty * price
-                if amt == 0:
-                    try:
-                        qty = float(ln.get("quantity") or ln.get("qty") or 1)
-                        price = float(ln.get("unitPrice") or ln.get("price") or 
-                                    ln.get("unitCost") or ln.get("rate") or 0)
-                        amt = qty * price
-                    except:
-                        pass
-                
-                if amt == 0:
-                    continue
-                    
-                # Extraer código de cuenta
-                account_fields = ["expenseAccountCode", "accountCode", "expenseAccountId", 
-                                "accountId", "account", "expenseAccount"]
-                account_code = ""
-                
-                for field in account_fields:
-                    if field in ln and ln[field]:
-                        account_code = str(ln[field])
-                        break
-                
-                # Extraer descripción
-                desc_fields = ["accountName", "name", "description", "concept", 
-                              "detail", "item", "product"]
-                account_name = ""
-                
-                for field in desc_fields:
-                    if field in ln and ln[field]:
-                        account_name = str(ln[field])
-                        break
-                
-                # Si no hay descripción, usar índice
-                if not account_name:
-                    account_name = f"Línea {i+1}"
-                    
-                lines.append((fecha, account_code or "62XXX", account_name, float(amt)))
-        
-        else:
-            # No hay líneas, usar total del documento
-            total = 0.0
-            total_fields = ["subTotal", "subtotal", "untaxedAmount", "total", 
-                           "amount", "netAmount", "baseAmount"]
-            
-            for field in total_fields:
-                if field in doc_json and doc_json[field] is not None:
-                    try:
-                        total = float(doc_json[field])
-                        break
-                    except:
-                        continue
-            
-            if total > 0:
-                supplier = doc_json.get("contactName", "Proveedor sin nombre")
-                doc_number = doc_json.get("docNumber", "S/N")
-                lines.append((fecha, "62XXX", f"Gasto {supplier} - {doc_number}", float(total)))
-        
-        return lines    
-
-    # ====== FUNCIONES AUXILIARES PARA HOLDED API ======
-    import unicodedata, re
-
-    @st.cache_data(ttl=300)
-    def get_holded_token():
-        """Obtener token de autenticación de Holded"""
-        try:
-            token = "fafbb8191b37e6b696f192e70b4a198c"
-            return token
-        except Exception as e:
-            st.warning(f"Error obteniendo token de Holded: {e}.")
-            return None
-
-    @st.cache_data(ttl=60)
-    def list_documents_corrected(doc_type: str, start_dt: datetime, end_dt: datetime, page_size=200):
-        """Lista documentos con filtros de fecha corregidos"""
-        url = f"https://api.holded.com/api/invoicing/v1/documents/{doc_type}"
-        headers = {"accept": "application/json", "key": get_holded_token()}
-        params = {
-            "starttmp": int(start_dt.timestamp()),
-            "endtmp": int(end_dt.timestamp()),
-            "sort": "created-asc",
-            "limit": page_size
-        }
-        try:
-            r = requests.get(url, headers=headers, params=params, timeout=30)
-            if r.status_code == 200:
-                data = r.json()
-                return pd.DataFrame(data) if isinstance(data, list) else pd.DataFrame()
-            else:
-                st.error(f"Error {r.status_code} en {doc_type}: {r.text[:300]}")
-                return pd.DataFrame()
-        except Exception as e:
-            st.error(f"Error conectando con Holded ({doc_type}): {e}")
-            return pd.DataFrame()
-
-    @st.cache_data(ttl=60)
-    def list_purchases_any(start_dt: datetime, end_dt: datetime, page_size=500):
-        """Descarga todas las compras (endpoint purchase) y filtra por fecha local."""
-        headers = {"accept": "application/json", "key": get_holded_token()}
-        url = "https://api.holded.com/api/invoicing/v1/documents/purchase"
-        
-        out = []
-        page = 1
-        while True:
-            r = requests.get(url, headers=headers, params={"page": page, "limit": page_size}, timeout=30)
-            if r.status_code != 200:
-                break
-            data = r.json()
-            if not data:
-                break
-            out.extend(data)
-            if len(data) < page_size:
-                break
-            page += 1
-        
-        if not out:
-            return pd.DataFrame()
-        
-        df = pd.DataFrame(out)
-        
-        # Filtrar localmente por fecha
-        if "date" in df.columns:
-            df["_date"] = pd.to_datetime(df["date"], unit="s", errors="coerce")
-            mask = (df["_date"] >= pd.to_datetime(start_dt)) & (df["_date"] <= pd.to_datetime(end_dt))
-            df = df[mask].copy()
-        
-        return df
-        @st.cache_data(ttl=60)
-        def get_document_detail_corrected(doc_type: str, doc_id: str):
-            """Obtiene detalle de documento específico"""
-            if not doc_id:
-                return {}
-            url = f"https://api.holded.com/api/invoicing/v1/documents/{doc_type}/{doc_id}"
-            headers = {"accept": "application/json", "key": get_holded_token()}
-            try:
-                r = requests.get(url, headers=headers, timeout=30)
-                return r.json() if r.status_code == 200 else {}
-            except Exception as e:
-                st.warning(f"Error obteniendo detalle de {doc_id}: {e}")
-                return {}
-
-    @st.cache_data(ttl=60)
-    def list_daily_ledger_corrected(start_dt: datetime, end_dt: datetime):
-        """Obtiene libro diario con filtros de fecha mejorados"""
-        url = "https://api.holded.com/api/accounting/v1/dailyledger"
-        headers = {"accept": "application/json", "key": get_holded_token()}
-        date_formats = [
-            {"from": start_dt.strftime("%Y-%m-%d"), "to": end_dt.strftime("%Y-%m-%d")},
-            {"dateFrom": start_dt.strftime("%Y-%m-%d"), "dateTo": end_dt.strftime("%Y-%m-%d")},
-            {"starttmp": int(start_dt.timestamp()), "endtmp": int(end_dt.timestamp())},
-        ]
-        for params in date_formats:
-            try:
-                r = requests.get(url, headers=headers, params=params, timeout=30)
-                if r.status_code == 200:
-                    data = r.json()
-                    if data:
-                        return data
-            except Exception:
-                continue
-        # Fallback: traer todo y filtrar local
-        try:
-            r = requests.get(url, headers=headers, timeout=30)
-            if r.status_code == 200:
-                data = r.json()
-                out = []
-                for d in data:
-                    dt = d.get("date")
-                    try:
-                        dtp = pd.to_datetime(dt, unit="s") if isinstance(dt, (int, float)) else pd.to_datetime(dt)
-                    except Exception:
-                        continue
-                    if start_dt <= dtp <= end_dt:
-                        out.append(d)
-                return out
-        except Exception as e:
-            st.warning(f"Error obteniendo libro diario: {e}")
-        return []
-
-    # ====== CLASIFICADOR PGC ======
-    def _strip_accents(s: str) -> str:
-        s = str(s or "")
-        return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
-
-    def _only_leading_digits(code: str) -> str:
-        code = str(code or "").strip().replace("\xa0", " ")
-        m = re.match(r"^([0-9]{2,})", code)
-        return m.group(1) if m else ""
-
-    def classify_account_corrected(code: str, name: str = "") -> str:
-        """
-        - Limpia el código (dígitos iniciales).
-        - Prioriza 768/668 (Diferencias) antes que 76/66.
-        - Añade 68/69 como gastos.
-        """
-        code = _only_leading_digits(code)
-        name_clean = _strip_accents(str(name or "").lower())
-
-        # Reglas por código
-        if code.startswith("768") or code.startswith("668"):
-            return "Diferencias de cambio"
-        elif code.startswith("76"):
-            return "Ingresos financieros"
-        elif code.startswith("66"):
-            return "Gastos financieros"
-        elif code.startswith("64"):
-            return "Gastos de personal"
-        elif code.startswith(("60", "61")):
-            return "Aprovisionamientos"
-        elif code.startswith(("62", "63", "65", "68", "69")):
-            return "Otros gastos de explotación"
-        elif code.startswith("77"):
-            return "Otros resultados"
-        elif code.startswith(("70", "71", "72", "73", "74", "75")):
-            return "Ingresos"
-        elif code.startswith("7"):
-            return "Ingresos"
-        elif code.startswith("6"):
-            return "Otros gastos de explotación"
-
-        # Fallback por nombre
-        if any(w in name_clean for w in ["nomina", "sueldo", "salario", "personal", "seguridad social"]):
-            return "Gastos de personal"
-        if any(w in name_clean for w in ["interes", "financiero", "prestamo", "credito"]):
-            return "Gastos financieros"
-        if "cambio" in name_clean or "divisa" in name_clean:
-            return "Diferencias de cambio"
-        if any(w in name_clean for w in ["compra", "suministro", "materia prima"]):
-            return "Aprovisionamientos"
-
-        return "Otros gastos de explotación"
-
-    # ====== PARSERS / NORMALIZADORES ======
-    def _line_amount_fallback(ln: dict) -> float:
-        for k in ("subTotal","subtotal","untaxedAmount","netAmount","base","amount","total"):
-            v = ln.get(k)
-            if v is not None:
-                try: return float(v)
-                except: pass
-        qty = ln.get("quantity") or ln.get("qty") or 1
-        price = (ln.get("unitPrice") or ln.get("price") or ln.get("unitprice") or
-                 ln.get("unit_cost") or ln.get("unitCost") or 0)
-        try: return float(qty) * float(price)
-        except: return 0.0
-    def parse_purchase_lines_corrected(doc_json: dict):
-        """Extrae líneas de compra robustamente."""
-        lines = []
-        if not doc_json:
-            return lines
-        raw_date = doc_json.get("date")
-        fecha = pd.to_datetime(raw_date, unit='s', errors='coerce') if isinstance(raw_date, (int, float)) \
-                else pd.to_datetime(raw_date, errors='coerce')
-
-        items = doc_json.get("items", []) or doc_json.get("lines", []) or doc_json.get("concepts", [])
-        if items:
-            for ln in items:
-                amt = _line_amount_fallback(ln)
-                account_code = (ln.get("expenseAccountCode") or ln.get("accountCode") or
-                                ln.get("expenseAccountId") or ln.get("accountId") or "")
-                account_name = (ln.get("accountName") or ln.get("name") or ln.get("description") or "")
-                lines.append((fecha, str(account_code), account_name, float(amt)))
-        else:
-            total = 0.0
-            for k in ("subTotal", "subtotal", "untaxedAmount", "total", "amount"):
-                v = doc_json.get(k)
-                if v is not None:
-                    try:
-                        total = float(v)
-                        break
-                    except Exception:
-                        pass
-            if total:
-                lines.append((fecha, "62XXX", "Gasto sin desglosar", float(total)))
-        return lines
-
-    EXPENSE_CATS = {"Aprovisionamientos", "Gastos de personal", "Otros gastos de explotación", "Gastos financieros"}
-    INCOME_CATS = {"Ingresos", "Ingresos financieros"}
-    NEUTRAL_CATS = {"Diferencias de cambio", "Otros resultados"}  # mantener signo de origen
-
-    def normalize_amount_by_category(cat: str, amount: float) -> float:
-        amount = float(amount or 0)
-        if cat in EXPENSE_CATS:
-            return -abs(amount)
-        if cat in INCOME_CATS:
-            return abs(amount)
-        return amount  # neutral
 
     # ====== INTERFAZ (FILTROS) ======
     st.sidebar.markdown("---")
@@ -2075,23 +2417,10 @@ with tab3:
         datetime.combine(fecha_inicio_pl, datetime.min.time()),
         datetime.combine(fecha_fin_pl, datetime.max.time())
     )
-    df_purchases_for_clients = list_purchases_any(
-        datetime.combine(fecha_inicio_pl, datetime.min.time()),
-        datetime.combine(fecha_fin_pl, datetime.max.time())
-    )
+
     clientes_invoices = df_invoices_for_clients["contactName"].dropna().unique().tolist() if not df_invoices_for_clients.empty else []
-    clientes_purchases = df_purchases_for_clients["contactName"].dropna().unique().tolist() if not df_purchases_for_clients.empty else []
 
-    ledger_entries_for_clients = list_daily_ledger_corrected(
-        datetime.combine(fecha_inicio_pl, datetime.min.time()),
-        datetime.combine(fecha_fin_pl, datetime.max.time())
-    )
-    clientes_ledger = []
-    for entry in ledger_entries_for_clients:
-        cliente = entry.get("contactName") or entry.get("thirdParty") or entry.get("customer")
-        clientes_ledger.append(cliente if cliente else "Libro Diario (sin cliente)")
-
-    clientes_unicos = sorted(set(clientes_invoices + clientes_purchases + clientes_ledger))
+    clientes_unicos = sorted(set(clientes_invoices))
     clientes_pl_3 = ["Todo"] + clientes_unicos
 
     if "pl_cliente_sel" not in st.session_state:
@@ -2110,166 +2439,22 @@ with tab3:
     if st.sidebar.button("🔄 Actualizar P&L", type="primary"):
         st.session_state.pl_data_updated = False
         list_documents_corrected.clear()
-        list_purchases_any.clear()
         get_document_detail_corrected.clear()
         list_daily_ledger_corrected.clear()
+        get_comprehensive_expenses.clear()
 
     st.sidebar.info(f"**Filtros activos:**\n- Período: {fecha_inicio_pl} a {fecha_fin_pl}\n- Cliente: {cliente_pl}\n- Libro diario: {'Sí' if usar_libro_diario else 'No'}")
 
-    # ====== PROCESAMIENTO ======
+    # ====== PROCESAMIENTO PRINCIPAL ======
     inicio_dt = datetime.combine(fecha_inicio_pl, datetime.min.time())
     fin_dt = datetime.combine(fecha_fin_pl, datetime.max.time())
 
     if not st.session_state.get("pl_data_updated", False):
         try:
-            with st.spinner("Cargando datos de Holded..."):
-                # 1) INGRESOS
-                st.info("📥 Cargando facturas de venta...")
-                df_invoices = list_documents_corrected("invoice", inicio_dt, fin_dt)
-
-                ingresos_data = []
-                if not df_invoices.empty:
-                    for _, inv in df_invoices.iterrows():
-                        inv_date = inv.get("date")
-                        fecha = pd.to_datetime(inv_date, unit="s", errors="coerce") if isinstance(inv_date, (int, float)) else pd.to_datetime(inv_date, errors="coerce")
-                        if pd.isna(fecha):
-                            continue
-                        amount = 0.0
-                        for k in ("subTotal", "subtotal", "untaxedAmount", "total"):
-                            if k in inv and inv[k] is not None:
-                                try:
-                                    amount = float(inv[k]); break
-                                except Exception:
-                                    pass
-                        cliente = inv.get("contactName", "Sin nombre")
-                        if cliente_pl != "Todo" and cliente != cliente_pl:
-                            continue
-                        periodo = fecha.to_period("M").strftime("%Y-%m")
-                        cat = "Ingresos"
-                        amount_norm = normalize_amount_by_category(cat, amount)
-                        ingresos_data.append({
-                            "periodo": periodo, "fecha": fecha, "cliente": cliente,
-                            "categoria": cat, "importe": amount_norm,
-                            "cuenta": "70XXX", "descripcion": f"Factura {inv.get('docNumber', '')}"
-                        })
-                st.success(f"✅ Procesadas {len(ingresos_data)} facturas de venta")
-
-                # 2) COMPRAS (purchase + bill + expense)
-                # --- 🔎 SONDEO DE ENDPOINTS DE COMPRAS (pegar antes de usar df_purchases) ---
-
-                @st.cache_data(ttl=60)
-                def _try_get(url, headers, params):
-                    try:
-                        r = requests.get(url, headers=headers, params=params, timeout=30)
-                        return r.status_code, (r.json() if r.headers.get("content-type","").startswith("application/json") else None), r.text[:200]
-                    except Exception as e:
-                        return -1, None, str(e)
+            with st.spinner("Procesando P&L comprehensivo..."):
+                # PROCESAMIENTO COMPREHENSIVO (reemplaza todo el procesamiento anterior)
+                df_consolidated = process_pl_holded_comprehensive(inicio_dt, fin_dt, cliente_pl, usar_libro_diario)
                 
-                @st.cache_data(ttl=60)
-                def probe_purchases_endpoints(start_dt: datetime, end_dt: datetime, page_size=200):
-                    """
-                    Prueba múltiples variantes de compras y distintos parámetros de fecha.
-                    Devuelve: (best_kind, best_df, debug_rows)
-                    """
-                    headers = {"accept": "application/json", "key": get_holded_token()}
-                    base = "https://api.holded.com/api/invoicing/v1"
-                
-                    # Candidatos de ruta (lista de (kind, path))
-                    route_candidates = [
-                        ("purchase", f"{base}/documents/purchase"),
-                        ("bill",     f"{base}/documents/bill"),
-                        ("expense",  f"{base}/documents/expense"),
-                        # Por si la API usa plurales en algunos tenants:
-                        ("bills",    f"{base}/documents/bills"),
-                        ("expenses", f"{base}/documents/expenses"),
-                        # Por si existiera un recurso directo (algunos tenants antiguos):
-                        ("purchases", f"{base}/purchases"),
-                    ]
-                
-                    # Candidatos de filtros de fecha
-                    date_params_candidates = [
-                        {"starttmp": int(start_dt.timestamp()), "endtmp": int(end_dt.timestamp())},
-                        {"dateFrom": start_dt.strftime("%Y-%m-%d"), "dateTo": end_dt.strftime("%Y-%m-%d")},
-                        {"from": start_dt.strftime("%Y-%m-%d"), "to": end_dt.strftime("%Y-%m-%d")},
-                        # Último recurso: sin filtros (y filtramos local si toca)
-                        {},
-                    ]
-                
-                    debug_rows = []
-                    best = ("", pd.DataFrame(), 0, {}, "")  # (kind, df, n_rows, params, url)
-                    for kind, url in route_candidates:
-                        for date_params in date_params_candidates:
-                            params = {"sort": "created-asc", "limit": page_size} | date_params
-                            code, js, preview = _try_get(url, headers, params)
-                            n = len(js) if isinstance(js, list) else 0
-                            debug_rows.append({
-                                "kind": kind, "url": url, "status": code, "params": date_params, "n": n, "preview": preview
-                            })
-                            if n > best[2]:
-                                df = pd.DataFrame(js) if isinstance(js, list) else pd.DataFrame()
-                                best = (kind, df, n, date_params, url)
-                
-                    return best[0], best[1], pd.DataFrame(debug_rows).sort_values("n", ascending=False).head(20)
-                
-                # === úsalo antes de armar df_purchases ===
-                best_kind, best_df, probe_table = probe_purchases_endpoints(inicio_dt, fin_dt)
-                
-                with st.expander("🔧 Debug de búsqueda de compras"):
-                    st.write("Mejor endpoint encontrado:", best_kind)
-                    st.dataframe(probe_table, use_container_width=True)
-                    if not best_df.empty:
-                        st.write("Muestra de 5 docs:")
-                        st.dataframe(best_df.head(5))
-                
-                # Si no encontró nada, seguimos con DF vacío
-                df_purchases = best_df.copy()
-                # Guardamos el 'kind' ganador en sesión para usarlo al pedir el detalle:
-                st.session_state.setdefault("best_purchase_kind", best_kind or "purchase")
-
-                st.info("📤 Cargando compras (purchase/bill/expense)...")
-                #df_purchases = list_purchases_any(inicio_dt, fin_dt)
-
-                gastos_data = process_expenses_corrected(inicio_dt, fin_dt, cliente_pl)
-
-
-
-                # 3) LIBRO DIARIO (opcional)
-                diario_data = []
-                if usar_libro_diario:
-                    st.info("📚 Cargando libro diario...")
-                    ledger_entries = list_daily_ledger_corrected(inicio_dt, fin_dt)
-                    for entry in ledger_entries:
-                        entry_date = entry.get("date")
-                        fecha = pd.to_datetime(entry_date, unit="s", errors="coerce") if isinstance(entry_date, (int, float)) else pd.to_datetime(entry_date, errors="coerce")
-                        if pd.isna(fecha):
-                            continue
-                        amount = entry.get("amount")
-                        if amount is None:
-                            debit = float(entry.get("debit", 0) or 0)
-                            credit = float(entry.get("credit", 0) or 0)
-                            amount = debit - credit
-                        else:
-                            amount = float(amount)
-                        if amount == 0:
-                            continue
-                        account_code = str(entry.get("accountCode", "") or "")
-                        account_name = str(entry.get("accountName", "") or "")
-                        categoria = classify_account_corrected(account_code, account_name)
-                        amount_norm = normalize_amount_by_category(categoria, amount)
-                        periodo = fecha.to_period("M").strftime("%Y-%m")
-                        cliente_entry = entry.get("contactName") or entry.get("thirdParty") or entry.get("customer") or "Libro Diario (sin cliente)"
-                        if cliente_pl != "Todo" and cliente_entry != cliente_pl:
-                            continue
-                        diario_data.append({
-                            "periodo": periodo, "fecha": fecha, "cliente": cliente_entry,
-                            "categoria": categoria, "importe": amount_norm,
-                            "cuenta": account_code, "descripcion": account_name
-                        })
-                    st.success(f"✅ Procesadas {len(diario_data)} entradas del diario")
-
-                # 4) CONSOLIDAR
-                all_data = ingresos_data + gastos_data + diario_data
-                df_consolidated = pd.DataFrame(all_data)
                 if df_consolidated.empty:
                     st.warning("⚠️ No se encontraron datos en el período seleccionado")
                     st.session_state.pl_data_updated = True
@@ -2278,30 +2463,30 @@ with tab3:
                 st.session_state.df_pl_consolidated = df_consolidated
                 st.session_state.pl_data_updated = True
 
-                # Debug corto
-                st.write("🔎 Debug P&L:",
-                         {"ingresos_facturas": len(ingresos_data),
-                          "lineas_compras": len(gastos_data),
-                          "asientos_diario": len(diario_data),
-                          "cats": pd.Series([r["categoria"] for r in all_data]).value_counts().to_dict()})
+                # Debug resumen
+                categories_summary = df_consolidated.groupby("categoria")["importe"].sum()
+                st.write("🔎 Resumen por Categoría:", categories_summary.to_dict())
 
         except Exception as e:
             st.error(f"❌ Error procesando datos: {str(e)}")
             st.exception(e)
             st.stop()
+
+    # ====== MOSTRAR RESULTADOS ======
     tab_pgc, tab_actual = st.tabs(["📋 Formato PGC", "📊 Dashboard Actual"])
+    
     with tab_pgc:
         if st.session_state.get("pl_data_updated", False):
             df_data = st.session_state.get("df_pl_consolidated", pd.DataFrame())
             if not df_data.empty:
                 generate_pgc_report(df_data, inicio_dt, fin_dt)
+    
     with tab_actual:
-        # ====== MOSTRAR RESULTADOS ======
         if st.session_state.get("pl_data_updated", False):
             df_data = st.session_state.get("df_pl_consolidated", pd.DataFrame())
             if not df_data.empty:
                 df_pl_summary = df_data.groupby(["periodo", "categoria"])["importe"].sum().unstack(fill_value=0).reset_index()
-    
+
                 required_columns = [
                     "Ingresos", "Aprovisionamientos", "Gastos de personal",
                     "Otros gastos de explotación", "Ingresos financieros",
@@ -2310,7 +2495,7 @@ with tab3:
                 for col in required_columns:
                     if col not in df_pl_summary.columns:
                         df_pl_summary[col] = 0.0
-    
+
                 # KPIs (gastos ya son negativos por normalización)
                 df_pl_summary["Margen Bruto"] = df_pl_summary["Ingresos"] + df_pl_summary["Aprovisionamientos"]
                 df_pl_summary["EBITDA"] = (df_pl_summary["Margen Bruto"] +
@@ -2321,7 +2506,7 @@ with tab3:
                                                          df_pl_summary["Gastos financieros"] +
                                                          df_pl_summary["Diferencias de cambio"])
                 df_pl_summary["Resultado Neto"] = df_pl_summary["Resultado Operativo"] + df_pl_summary["Resultado Financiero"]
-    
+
                 st.subheader("📊 Resumen P&L")
                 totales = df_pl_summary.select_dtypes(include=[float, int]).sum()
                 col1, col2, col3, col4 = st.columns(4)
@@ -2329,7 +2514,7 @@ with tab3:
                 col2.metric("📈 Margen Bruto", f"${totales['Margen Bruto']:,.2f}")
                 col3.metric("🎯 EBITDA", f"${totales['EBITDA']:,.2f}")
                 col4.metric("💎 Resultado Neto", f"${totales['Resultado Neto']:,.2f}")
-    
+
                 if totales['Ingresos'] > 0:
                     col5, col6, col7, col8 = st.columns(4)
                     col5.metric("Margen %", f"{(totales['Margen Bruto']/totales['Ingresos']*100):.1f}%")
@@ -2338,7 +2523,7 @@ with tab3:
                     gp = abs(totales['Gastos de personal'])
                     if gp > 0:
                         col8.metric("Personal %", f"{(gp/totales['Ingresos']*100):.1f}%")
-    
+
                 st.subheader("📋 P&L Detallado")
                 display_columns = [
                     "periodo", "Ingresos", "Aprovisionamientos", "Margen Bruto",
@@ -2349,7 +2534,7 @@ with tab3:
                 df_display = df_pl_summary[display_columns].copy().round(2)
                 df_display.columns = [col.replace('periodo', '🗓️ Período') for col in df_display.columns]
                 st.dataframe(df_display, use_container_width=True, height=400)
-    
+
                 if len(df_pl_summary) > 1:
                     st.subheader("📈 Evolución Temporal")
                     chart_metrics = ["Ingresos", "Margen Bruto", "EBITDA", "Resultado Neto"]
@@ -2368,7 +2553,7 @@ with tab3:
                         .properties(height=400)
                     )
                     st.altair_chart(chart, use_container_width=True)
-    
+
                 if mostrar_detalle_cuentas:
                     st.subheader("🔍 Detalle por Cuenta Contable")
                     col_f1, col_f2, col_f3 = st.columns(3)
@@ -2378,7 +2563,7 @@ with tab3:
                     periodo_filter = col_f2.selectbox("Período", periodos_disponibles, key="periodo_detail")
                     clientes_disponibles = ["Todos"] + sorted(df_data["cliente"].unique().tolist())
                     cliente_detail_filter = col_f3.selectbox("Cliente", clientes_disponibles, key="cliente_detail")
-    
+
                     df_filtered = df_data.copy()
                     if cat_filter != "Todas":
                         df_filtered = df_filtered[df_filtered["categoria"] == cat_filter]
@@ -2386,14 +2571,14 @@ with tab3:
                         df_filtered = df_filtered[df_filtered["periodo"] == periodo_filter]
                     if cliente_detail_filter != "Todos":
                         df_filtered = df_filtered[df_filtered["cliente"] == cliente_detail_filter]
-    
+
                     if not df_filtered.empty:
-                        df_detail_display = df_filtered[["periodo", "cliente", "categoria", "cuenta", "descripcion", "importe"]].copy()
+                        df_detail_display = df_filtered[["periodo", "cliente", "categoria", "cuenta", "descripcion", "importe", "fuente"]].copy()
                         df_detail_display = df_detail_display.sort_values(["periodo", "categoria", "importe"], ascending=[True, True, False])
                         df_detail_display["importe"] = df_detail_display["importe"].round(2)
                         st.dataframe(df_detail_display, use_container_width=True, height=400)
-    
-                        # Resumen por categoría (sin forzar colores)
+
+                        # Resumen por categoría
                         resumen_cat = df_filtered.groupby("categoria")["importe"].sum().reset_index().sort_values("importe")
                         if len(resumen_cat) > 0:
                             chart_cat = (
@@ -2412,8 +2597,6 @@ with tab3:
                 st.warning("⚠️ No hay datos consolidados disponibles.")
         else:
             st.info("👆 Usa los filtros del sidebar y presiona 'Actualizar P&L' para cargar los datos.")
-
-
 # ====== FIN DEL CÓDIGO ======
 
 
