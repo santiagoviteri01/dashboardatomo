@@ -1480,7 +1480,6 @@ def process_expenses_corrected(start_dt: datetime, end_dt: datetime, cliente_fil
 
 # ====== TAB 3: P&L desde Holded - VERSION PARCHEADA ======
 # ====== TAB 3: P&L desde Holded - VERSION CORREGIDA COMPLETA ======
-# ====== TAB 3: P&L desde Holded - VERSION CORREGIDA COMPLETA ======
 with tab3:
     st.header("📑 P&L desde Holded (API)")
     st.caption("Calculado desde documentos de Holded y libro diario contable para mayor precisión.")
@@ -2954,70 +2953,352 @@ with tab3:
         return df_result
 
     # Botón para diagnosticar aprovisionamientos
-    if st.button("🔍 Diagnosticar Aprovisionamientos", type="secondary"):
-        if st.session_state.get("pl_data_updated", False):
-            df_data = st.session_state.get("df_pl_consolidated", pd.DataFrame())
-            if not df_data.empty:
-                with st.expander("📋 Diagnóstico de Aprovisionamientos", expanded=True):
-                    duplicados_encontrados = diagnose_aprovisionamientos_issues(df_data)
-                    
-                    if duplicados_encontrados is not None and not duplicados_encontrados.empty:
-                        st.markdown("---")
-                        if st.button("🔧 Corregir Duplicados Automáticamente"):
-                            df_fixed = fix_aprovisionamientos_duplicates(df_data)
-                            st.session_state.df_pl_consolidated = df_fixed
-                            st.success("✅ Duplicados corregidos. Presiona 'Actualizar P&L' para ver los cambios.")
+    col_diag1, col_diag2, col_diag3 = st.columns(3)
+    
+    with col_diag1:
+        if st.button("🔍 Diagnosticar Aprovisionamientos", type="secondary"):
+            if st.session_state.get("pl_data_updated", False):
+                df_data = st.session_state.get("df_pl_consolidated", pd.DataFrame())
+                if not df_data.empty:
+                    with st.expander("📋 Diagnóstico de Aprovisionamientos", expanded=True):
+                        duplicados_encontrados = diagnose_aprovisionamientos_issues(df_data)
+                        
+                        if duplicados_encontrados is not None and not duplicados_encontrados.empty:
+                            st.markdown("---")
+                            if st.button("🔧 Corregir Duplicados Automáticamente", key="fix_aprov"):
+                                df_fixed = fix_aprovisionamientos_duplicates(df_data)
+                                st.session_state.df_pl_consolidated = df_fixed
+                                st.success("✅ Duplicados corregidos. Presiona 'Actualizar P&L' para ver los cambios.")
+                else:
+                    st.warning("No hay datos cargados para diagnosticar")
             else:
-                st.warning("No hay datos cargados para diagnosticar")
-        else:
-            st.warning("Primero carga los datos usando 'Actualizar P&L'")
+                st.warning("Primero carga los datos usando 'Actualizar P&L'")
 
-    # Diagnóstico rápido de todas las categorías
-    if st.button("📊 Diagnóstico General de Categorías", type="secondary"):
-        if st.session_state.get("pl_data_updated", False):
-            df_data = st.session_state.get("df_pl_consolidated", pd.DataFrame())
-            if not df_data.empty:
-                with st.expander("📋 Diagnóstico General", expanded=True):
-                    st.subheader("🔍 Comparación con Totales Esperados")
-                    
-                    # Totales esperados vs obtenidos
-                    expected_totals = {
-                        "Aprovisionamientos": -9012.02,
-                        "Gastos de personal": -52201.39,
-                        "Otros gastos de explotación": -275769.55,
-                        "Gastos financieros": -890.53,
-                        "Diferencias de cambio": 10628.19,
-                        "Otros resultados": 259.36,
-                        "Ingresos financieros": 0.18,
-                    }
-                    
-                    obtained_totals = df_data.groupby("categoria")["importe"].sum().to_dict()
-                    
-                    comparison_data = []
-                    for categoria, expected in expected_totals.items():
-                        obtained = obtained_totals.get(categoria, 0)
-                        difference = obtained - expected
-                        percentage_diff = (difference / expected * 100) if expected != 0 else 0
+    with col_diag2:
+        if st.button("🔍 Diagnosticar Otros Gastos", type="secondary"):
+            if st.session_state.get("pl_data_updated", False):
+                df_data = st.session_state.get("df_pl_consolidated", pd.DataFrame())
+                if not df_data.empty:
+                    with st.expander("📋 Diagnóstico de Otros Gastos de Explotación", expanded=True):
+                        # Función específica para otros gastos
+                        def diagnose_otros_gastos_explotacion(df_consolidated: pd.DataFrame):
+                            """
+                            Diagnóstico detallado de otros gastos de explotación
+                            """
+                            st.subheader("🔍 Diagnóstico de Otros Gastos de Explotación")
+                            
+                            if df_consolidated.empty:
+                                st.warning("No hay datos para diagnosticar")
+                                return
+                            
+                            # Filtrar solo otros gastos de explotación
+                            df_otros = df_consolidated[df_consolidated["categoria"] == "Otros gastos de explotación"].copy()
+                            
+                            if df_otros.empty:
+                                st.info("No se encontraron otros gastos de explotación en los datos")
+                                return
+                            
+                            # === ANÁLISIS GENERAL ===
+                            total_otros = df_otros["importe"].sum()
+                            expected_otros = -275769.55  # Del Excel
+                            difference = total_otros - expected_otros
+                            
+                            col1, col2, col3 = st.columns(3)
+                            col1.metric("💰 Total Obtenido", f"{total_otros:,.2f} €")
+                            col2.metric("🎯 Total Esperado", f"{expected_otros:,.2f} €")
+                            col3.metric("⚠️ Diferencia", f"{difference:,.2f} €", 
+                                        delta=f"{(difference/expected_otros*100):.1f}%" if expected_otros != 0 else "N/A")
+                            
+                            # === VERIFICACIÓN DE CUENTAS ESPECÍFICAS IMPORTANTES ===
+                            st.subheader("🎯 Verificación de Cuentas Clave del Excel")
+                            
+                            # Cuentas específicas con sus importes esperados del Excel
+                            cuentas_clave = {
+                                "62100001": {"esperado": -18180.00, "descripcion": "Alquiler apartamentos turísticos"},
+                                "62100002": {"esperado": -4168.60, "descripcion": "Renting Lexus kinto ONe"},
+                                "62200002": {"esperado": -23486.29, "descripcion": "Hostings"},
+                                "62300004": {"esperado": -72264.93, "descripcion": "Servicios profesionales Abogados"},
+                                "62300020": {"esperado": -17276.52, "descripcion": "Servicios TECHNOURCE"},
+                                "62300021": {"esperado": -19421.85, "descripcion": "Servicios ITMA"},
+                                "62700000": {"esperado": -46943.81, "descripcion": "Publicidad propaganda"},
+                                "62900001": {"esperado": -13292.64, "descripcion": "Software y Licencias"},
+                                "62900003": {"esperado": -36143.84, "descripcion": "Viajes hoteles vuelos"},
+                                "62600001": {"esperado": -161.22, "descripcion": "Servicios bancarios CAIXABANK"},
+                                "62600002": {"esperado": -1271.35, "descripcion": "Servicios bancarios BBVA"},
+                            }
+                            
+                            verificacion_data = []
+                            total_cuentas_clave = 0
+                            
+                            for cuenta, info in cuentas_clave.items():
+                                cuenta_data = df_otros[df_otros['cuenta'] == cuenta]
+                                
+                                if cuenta_data.empty:
+                                    obtenido = 0.0
+                                    status = "❌ NO ENCONTRADA"
+                                else:
+                                    obtenido = cuenta_data['importe'].sum()
+                                    total_cuentas_clave += obtenido
+                                    diferencia = abs(obtenido - info["esperado"])
+                                    
+                                    if diferencia < 10:
+                                        status = "✅ CORRECTO"
+                                    elif diferencia < 100:
+                                        status = "⚠️ MENOR DIF"
+                                    else:
+                                        status = "❌ DIFERENCIA"
+                                
+                                verificacion_data.append({
+                                    "Cuenta": cuenta,
+                                    "Descripción": info["descripcion"],
+                                    "Esperado": f"{info['esperado']:,.2f} €",
+                                    "Obtenido": f"{obtenido:,.2f} €",
+                                    "Diferencia": f"{obtenido - info['esperado']:,.2f} €",
+                                    "Status": status
+                                })
+                            
+                            df_verificacion = pd.DataFrame(verificacion_data)
+                            st.dataframe(df_verificacion, use_container_width=True)
+                            
+                            # === ANÁLISIS POR SUBCATEGORÍAS (62X) ===
+                            st.subheader("📊 Análisis por Subcategorías")
+                            
+                            # Agrupar por prefijo de cuenta
+                            df_otros['prefijo'] = df_otros['cuenta'].str[:3]
+                            subcategoria_summary = df_otros.groupby('prefijo').agg({
+                                'importe': ['sum', 'count'],
+                                'cuenta': lambda x: ', '.join(sorted(x.unique())[:3])
+                            }).round(2)
+                            
+                            subcategoria_summary.columns = ['Total', 'Cantidad', 'Cuentas_Ejemplo']
+                            subcategoria_summary = subcategoria_summary.reset_index()
+                            
+                            # Mapeo de subcategorías
+                            subcategoria_mapping = {
+                                '621': 'Alquileres y renting',
+                                '622': 'Mantenimiento y reparaciones',
+                                '623': 'Servicios profesionales',
+                                '624': 'Transportes',
+                                '625': 'Primas de seguros',
+                                '626': 'Servicios bancarios',
+                                '627': 'Publicidad y propaganda',
+                                '628': 'Suministros',
+                                '629': 'Otros servicios',
+                                '631': 'Tributos'
+                            }
+                            
+                            subcategoria_summary['Descripción'] = subcategoria_summary['prefijo'].map(subcategoria_mapping)
+                            subcategoria_summary = subcategoria_summary[['prefijo', 'Descripción', 'Total', 'Cantidad', 'Cuentas_Ejemplo']]
+                            
+                            st.dataframe(subcategoria_summary, use_container_width=True)
+                            
+                            # === DETECCIÓN DE DUPLICADOS ===
+                            st.subheader("🚨 Detección de Posibles Duplicados")
+                            
+                            df_otros['fecha_str'] = df_otros['fecha'].dt.strftime('%Y-%m-%d')
+                            df_otros['importe_abs'] = df_otros['importe'].abs()
+                            
+                            duplicados = df_otros.groupby(['fecha_str', 'cuenta', 'importe_abs']).agg({
+                                'importe': 'sum',
+                                'fuente': lambda x: list(x),
+                                'descripcion': 'first'
+                            }).reset_index()
+                            
+                            duplicados['num_fuentes'] = duplicados['fuente'].apply(len)
+                            posibles_duplicados = duplicados[duplicados['num_fuentes'] > 1]
+                            
+                            if not posibles_duplicados.empty:
+                                st.error(f"⚠️ Encontrados {len(posibles_duplicados)} posibles duplicados:")
+                                st.dataframe(posibles_duplicados[['fecha_str', 'cuenta', 'descripcion', 'importe_abs', 'fuente']], 
+                                           use_container_width=True)
+                                return posibles_duplicados
+                            else:
+                                st.success("✅ No se detectaron duplicados obvios")
+                            
+                            # === TOP 10 GASTOS ===
+                            st.subheader("💸 Top 10 Gastos Más Grandes")
+                            
+                            top_gastos = df_otros.groupby(['cuenta', 'descripcion'])['importe'].sum().reset_index()
+                            top_gastos['importe_abs'] = top_gastos['importe'].abs()
+                            top_gastos = top_gastos.nlargest(10, 'importe_abs')[['cuenta', 'descripcion', 'importe']]
+                            
+                            st.dataframe(top_gastos, use_container_width=True)
+                            
+                            return None
                         
-                        status = "✅" if abs(difference) < 100 else "⚠️" if abs(difference) < 1000 else "❌"
+                        duplicados_encontrados = diagnose_otros_gastos_explotacion(df_data)
                         
-                        comparison_data.append({
-                            "Categoría": categoria,
-                            "Esperado": f"{expected:,.2f} €",
-                            "Obtenido": f"{obtained:,.2f} €",
-                            "Diferencia": f"{difference:,.2f} €",
-                            "% Diferencia": f"{percentage_diff:.1f}%",
-                            "Status": status
-                        })
-                    
-                    df_comparison = pd.DataFrame(comparison_data)
-                    st.dataframe(df_comparison, use_container_width=True)
-                    
-                    # Resumen de fuentes por categoría
-                    st.subheader("📊 Resumen por Fuente y Categoría")
-                    source_category_summary = df_data.groupby(["categoria", "fuente"])["importe"].sum().unstack(fill_value=0).round(2)
-                    st.dataframe(source_category_summary, use_container_width=True)
+                        if duplicados_encontrados is not None and not duplicados_encontrados.empty:
+                            st.markdown("---")
+                            if st.button("🔧 Corregir Duplicados Otros Gastos", key="fix_otros"):
+                                df_fixed = fix_otros_gastos_duplicates(df_data)
+                                st.session_state.df_pl_consolidated = df_fixed
+                                st.success("✅ Duplicados corregidos. Presiona 'Actualizar P&L' para ver los cambios.")
+                else:
+                    st.warning("No hay datos cargados para diagnosticar")
             else:
-                st.warning("No hay datos cargados para diagnosticar")
-        else:
-            st.warning("Primero carga los datos usando 'Actualizar P&L'")
+                st.warning("Primero carga los datos usando 'Actualizar P&L'")
+
+    with col_diag3:
+        if st.button("📊 Diagnóstico Completo", type="secondary"):
+            if st.session_state.get("pl_data_updated", False):
+                df_data = st.session_state.get("df_pl_consolidated", pd.DataFrame())
+                if not df_data.empty:
+                    with st.expander("📋 Diagnóstico Completo de Todas las Categorías", expanded=True):
+                        # Función de diagnóstico completo
+                        def diagnose_all_main_categories(df_consolidated: pd.DataFrame):
+                            """
+                            Diagnóstico comparativo de todas las categorías principales
+                            """
+                            st.subheader("📊 Diagnóstico Comparativo - Todas las Categorías")
+                            
+                            if df_consolidated.empty:
+                                st.warning("No hay datos para diagnosticar")
+                                return
+                            
+                            # Totales esperados del Excel
+                            expected_totals = {
+                                "Aprovisionamientos": -9012.02,
+                                "Gastos de personal": -52201.39,
+                                "Otros gastos de explotación": -275769.55,
+                                "Gastos financieros": -890.53,
+                                "Diferencias de cambio": 10628.19,
+                                "Otros resultados": 259.36,
+                                "Ingresos financieros": 0.18,
+                                "Ingresos": 2318450.97
+                            }
+                            
+                            # Totales obtenidos
+                            obtained_totals = df_consolidated.groupby("categoria")["importe"].sum().to_dict()
+                            
+                            # Crear análisis detallado
+                            analysis_data = []
+                            total_difference = 0
+                            
+                            for categoria, expected in expected_totals.items():
+                                obtained = obtained_totals.get(categoria, 0)
+                                difference = obtained - expected
+                                total_difference += abs(difference)
+                                percentage_diff = (difference / expected * 100) if expected != 0 else 0
+                                
+                                # Determinar nivel de problema
+                                if abs(difference) < 100:
+                                    level = "✅ CORRECTO"
+                                    priority = 1
+                                elif abs(difference) < 1000:
+                                    level = "⚠️ MENOR"
+                                    priority = 2
+                                elif abs(difference) < 10000:
+                                    level = "🔶 MEDIO"
+                                    priority = 3
+                                else:
+                                    level = "🚨 CRÍTICO"
+                                    priority = 4
+                                
+                                analysis_data.append({
+                                    "Categoría": categoria,
+                                    "Esperado": f"{expected:,.2f} €",
+                                    "Obtenido": f"{obtained:,.2f} €",
+                                    "Diferencia": f"{difference:,.2f} €",
+                                    "% Diferencia": f"{percentage_diff:.1f}%",
+                                    "Nivel": level,
+                                    "Prioridad": priority
+                                })
+                            
+                            # Ordenar por prioridad
+                            analysis_df = pd.DataFrame(analysis_data).sort_values(['Prioridad'], ascending=[False])
+                            
+                            st.dataframe(analysis_df[['Categoría', 'Esperado', 'Obtenido', 'Diferencia', '% Diferencia', 'Nivel']], 
+                                        use_container_width=True)
+                            
+                            # Resumen general
+                            st.subheader("📈 Resumen del Diagnóstico")
+                            
+                            col1, col2, col3 = st.columns(3)
+                            
+                            with col1:
+                                criticos = len(analysis_df[analysis_df['Prioridad'] == 4])
+                                st.metric("🚨 Problemas Críticos", criticos)
+                                
+                            with col2:
+                                medios = len(analysis_df[analysis_df['Prioridad'] == 3])
+                                st.metric("🔶 Problemas Medios", medios)
+                                
+                            with col3:
+                                menores = len(analysis_df[analysis_df['Prioridad'] == 2])
+                                st.metric("⚠️ Problemas Menores", menores)
+                            
+                            # Plan de acción
+                            st.subheader("🎯 Plan de Acción Recomendado")
+                            
+                            for _, row in analysis_df.iterrows():
+                                if row['Prioridad'] >= 3:  # Solo problemas medios y críticos
+                                    categoria = row['Categoría']
+                                    
+                                    if categoria == "Aprovisionamientos":
+                                        st.warning(f"🎯 **{categoria}**: Usar botón 'Diagnosticar Aprovisionamientos'")
+                                    elif categoria == "Otros gastos de explotación":
+                                        st.warning(f"🎯 **{categoria}**: Usar botón 'Diagnosticar Otros Gastos'")
+                                    elif categoria == "Gastos de personal":
+                                        st.warning(f"🎯 **{categoria}**: Verificar nóminas y cargas sociales")
+                                    elif categoria == "Ingresos":
+                                        st.warning(f"🎯 **{categoria}**: Verificar facturas de venta")
+                                    else:
+                                        st.info(f"🎯 **{categoria}**: Revisar clasificación")
+                            
+                            if total_difference < 1000:
+                                st.success("🎉 ¡Excelente! Todas las categorías están muy cerca de los valores esperados.")
+                            elif total_difference < 10000:
+                                st.warning("⚠️ Hay algunas diferencias que requieren atención.")
+                            else:
+                                st.error("🚨 Hay diferencias significativas que requieren investigación urgente.")
+                        
+                        diagnose_all_main_categories(df_data)
+                else:
+                    st.warning("No hay datos cargados para diagnosticar")
+            else:
+                st.warning("Primero carga los datos usando 'Actualizar P&L'")
+
+    # Función auxiliar para corregir duplicados en otros gastos
+    def fix_otros_gastos_duplicates(df_consolidated: pd.DataFrame):
+        """
+        Función para corregir duplicados en otros gastos de explotación
+        """
+        if df_consolidated.empty:
+            return df_consolidated
+        
+        # Crear copia para no modificar el original
+        df_fixed = df_consolidated.copy()
+        
+        # Filtrar otros gastos de explotación
+        df_otros = df_fixed[df_fixed["categoria"] == "Otros gastos de explotación"].copy()
+        df_rest = df_fixed[df_fixed["categoria"] != "Otros gastos de explotación"].copy()
+        
+        if df_otros.empty:
+            return df_consolidated
+        
+        # Detectar duplicados
+        df_otros['fecha_str'] = df_otros['fecha'].dt.strftime('%Y-%m-%d')
+        df_otros['importe_abs'] = df_otros['importe'].abs()
+        df_otros['duplicate_key'] = df_otros['fecha_str'] + '_' + df_otros['cuenta'] + '_' + df_otros['importe_abs'].astype(str)
+        
+        # Remover duplicados manteniendo solo el del libro diario (más confiable)
+        df_otros['fuente_priority'] = df_otros['fuente'].map({
+            'Libro Diario': 1,
+            'Documento purchase': 2,
+            'Documento bill': 3,
+            'Documento expense': 4,
+            'Factura Venta': 5
+        })
+        
+        # Ordenar por prioridad y mantener solo el primero de cada grupo
+        df_otros_sorted = df_otros.sort_values(['duplicate_key', 'fuente_priority'])
+        df_otros_fixed = df_otros_sorted.groupby('duplicate_key').first().reset_index()
+        
+        # Eliminar columnas auxiliares
+        df_otros_fixed = df_otros_fixed.drop(['fecha_str', 'importe_abs', 'duplicate_key', 'fuente_priority'], axis=1)
+        
+        # Recombinar datos
+        df_result = pd.concat([df_rest, df_otros_fixed], ignore_index=True)
+        
+        return df_result
