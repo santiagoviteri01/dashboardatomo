@@ -2573,7 +2573,7 @@ with tab3:
                 "💎 Resultado Neto (Último Mes)", 
                 f"${last_month_data['Resultado Neto']:,.0f}",
                 help=f"Acumulado: ${cumulative_
-        if st.session_state.get("pl_data_updated", False):
+        if st.session_state.get("pl_data_updated")=False:
             df_data = st.session_state.get("df_pl_consolidated", pd.DataFrame())
             if not df_data.empty:
                 df_pl_summary = df_data.groupby(["periodo", "categoria"])["importe"].sum().unstack(fill_value=0).reset_index()
