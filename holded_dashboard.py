@@ -1482,6 +1482,338 @@ def process_expenses_corrected(start_dt: datetime, end_dt: datetime, cliente_fil
 with tab3:
     st.header("📑 P&L desde Holded (API)")
     st.caption("Calculado desde documentos de Holded y libro diario contable para mayor precisión.")
+    def process_expenses_corrected(inicio_dt: datetime, fin_dt: datetime, cliente_pl: str):
+        """Procesa todos los tipos de gastos de manera robusta"""
+        gastos_data = []
+        
+        # 1. COMPRAS DIRECTAS (purchase/bill/expense)
+        best_kind = st.session_state.get("best_purchase_kind", "purchase")
+        
+        # Si ya tenemos df_purchases cargado desde el probe
+        if 'best_df' in locals() and not best_df.empty:
+            df_purchases = best_df.copy()
+        else:
+            # Fallback: cargar con método original
+            df_purchases = list_purchases_any(inicio_dt, fin_dt)
+        
+        if not df_purchases.empty:
+            for _, purchase in df_purchases.iterrows():
+                cliente = purchase.get("contactName", "Sin nombre")
+                if cliente_pl != "Todo" and cliente != cliente_pl:
+                    continue
+                    
+                # Obtener detalle del documento
+                doc_id = purchase.get("id")
+                if doc_id:
+                    doc_detail = get_document_detail_corrected(best_kind, str(doc_id))
+                    purchase_lines = parse_purchase_lines_corrected(doc_detail)
+                    
+                    for fecha, account_code, account_name, amount in purchase_lines:
+                        if pd.isna(fecha) or amount == 0:
+                            continue
+                            
+                        categoria = classify_account_corrected(account_code, account_name)
+                        amount_norm = normalize_amount_by_category(categoria, amount)
+                        periodo = fecha.to_period("M").strftime("%Y-%m")
+                        
+                        gastos_data.append({
+                            "periodo": periodo,
+                            "fecha": fecha,
+                            "cliente": cliente,
+                            "categoria": categoria,
+                            "importe": amount_norm,
+                            "cuenta": account_code,
+                            "descripcion": account_name or f"{best_kind.title()} {purchase.get('docNumber', '')}"
+                        })
+        
+        return gastos_data
+    
+    # ====== CLASIFICADOR MEJORADO PARA TODAS LAS CUENTAS ======
+    def classify_account_corrected(code: str, name: str = "") -> str:
+        """
+        Clasificador mejorado que incluye todas las cuentas del PGC español
+        """
+        code = _only_leading_digits(code)
+        name_clean = _strip_accents(str(name or "").lower())
+        
+        # === DIFERENCIAS DE CAMBIO (prioridad máxima) ===
+        if (code.startswith("768") or code.startswith("668") or 
+            "cambio" in name_clean or "divisa" in name_clean):
+            return "Diferencias de cambio"
+        
+        # === INGRESOS FINANCIEROS ===
+        if code.startswith("76"):
+            return "Ingresos financieros"
+        
+        # === GASTOS FINANCIEROS ===
+        if code.startswith("66"):
+            return "Gastos financieros"
+        
+        # === GASTOS DE PERSONAL (64) ===
+        if (code.startswith("64") or 
+            any(w in name_clean for w in ["nomina", "sueldo", "salario", "personal", 
+                                          "seguridad social", "indemnizacion"])):
+            return "Gastos de personal"
+        
+        # === APROVISIONAMIENTOS (60, 61, 607 trabajos por terceros) ===
+        if (code.startswith(("60", "61")) or 
+            any(w in name_clean for w in ["compra", "suministro", "materia prima", 
+                                          "trabajos realizados", "outsourcing"])):
+            return "Aprovisionamientos"
+        
+        # === OTROS GASTOS DE EXPLOTACIÓN (62, 63, 65, 68, 69) ===
+        if (code.startswith(("62", "63", "65", "68", "69")) or
+            any(w in name_clean for w in ["alquiler", "renting", "mantenimiento", "hosting",
+                                          "profesionales", "abogado", "notario", "consultor",
+                                          "transporte", "seguro", "bancario", "publicidad",
+                                          "software", "licencia", "oficina", "viaje", "dieta",
+                                          "desplazamiento", "gasoil", "combustible", "tributo"])):
+            return "Otros gastos de explotación"
+        
+        # === OTROS RESULTADOS (77, 67) ===
+        if (code.startswith(("77", "67")) or
+            any(w in name_clean for w in ["excepcional", "extraordinario"])):
+            return "Otros resultados"
+        
+        # === INGRESOS (70-75) ===
+        if (code.startswith(("70", "71", "72", "73", "74", "75")) or
+            any(w in name_clean for w in ["venta", "prestacion", "ingreso", "facturacion"])):
+            return "Ingresos"
+        
+        # === FALLBACKS POR NOMBRE ===
+        if any(w in name_clean for w in ["interes", "financiero", "prestamo", "credito"]):
+            return "Gastos financieros"
+        
+        # === FALLBACK GENERAL ===
+        if code.startswith("7"):
+            return "Ingresos"
+        elif code.startswith("6"):
+            return "Otros gastos de explotación"
+        
+        return "Otros gastos de explotación"
+    
+    # ====== FUNCIÓN PARA GENERAR REPORTE PGC ======
+    def generate_pgc_report(df_data: pd.DataFrame, inicio_dt: datetime, fin_dt: datetime):
+        """Genera un reporte en formato PGC español"""
+        
+        st.subheader("📋 Estado de Pérdidas y Ganancias (Formato PGC)")
+        st.caption(f"Período: {inicio_dt.strftime('%d/%m/%Y')} - {fin_dt.strftime('%d/%m/%Y')}")
+        
+        # Agrupar por cuenta y categoría
+        df_cuentas = df_data.groupby(["categoria", "cuenta", "descripcion"])["importe"].sum().reset_index()
+        df_cuentas = df_cuentas[df_cuentas["importe"] != 0].sort_values(["categoria", "cuenta"])
+        
+        # Totales por categoría
+        totales = df_data.groupby("categoria")["importe"].sum()
+        
+        # === ESTRUCTURA PGC ===
+        pgc_structure = [
+            ("1. IMPORTE NETO DE LA CIFRA DE NEGOCIOS", "Ingresos"),
+            ("4. APROVISIONAMIENTOS", "Aprovisionamientos"),
+            ("A) RESULTADO BRUTO", None),  # Calculado
+            ("6. GASTOS DE PERSONAL", "Gastos de personal"),
+            ("7. OTROS GASTOS DE EXPLOTACIÓN", "Otros gastos de explotación"),
+            ("B) RESULTADO DE EXPLOTACIÓN", None),  # Calculado
+            ("13. OTROS RESULTADOS", "Otros resultados"),
+            ("C) RESULTADO OPERATIVO", None),  # Calculado
+            ("14. INGRESOS FINANCIEROS", "Ingresos financieros"),
+            ("15. GASTOS FINANCIEROS", "Gastos financieros"),
+            ("17. DIFERENCIAS DE CAMBIO", "Diferencias de cambio"),
+            ("D) RESULTADO FINANCIERO", None),  # Calculado
+            ("E) RESULTADO ANTES DE IMPUESTOS", None),  # Calculado
+        ]
+        
+        # Crear el reporte
+        reporte_data = []
+        
+        for titulo, categoria in pgc_structure:
+            if categoria:  # Es una categoría real
+                valor = totales.get(categoria, 0)
+                reporte_data.append({
+                    "Concepto": titulo,
+                    "Importe": valor,
+                    "Tipo": "categoria"
+                })
+                
+                # Mostrar detalle de cuentas
+                cuentas_cat = df_cuentas[df_cuentas["categoria"] == categoria]
+                for _, row in cuentas_cat.iterrows():
+                    if abs(row["importe"]) > 0.01:  # Solo mostrar importes significativos
+                        reporte_data.append({
+                            "Concepto": f"  {row['cuenta']} - {row['descripcion'][:50]}",
+                            "Importe": row["importe"],
+                            "Tipo": "cuenta"
+                        })
+            
+            else:  # Es un subtotal calculado
+                if "RESULTADO BRUTO" in titulo:
+                    valor = totales.get("Ingresos", 0) + totales.get("Aprovisionamientos", 0)
+                elif "RESULTADO DE EXPLOTACIÓN" in titulo:
+                    valor = (totales.get("Ingresos", 0) + 
+                            totales.get("Aprovisionamientos", 0) +
+                            totales.get("Gastos de personal", 0) +
+                            totales.get("Otros gastos de explotación", 0))
+                elif "RESULTADO OPERATIVO" in titulo:
+                    valor = (totales.get("Ingresos", 0) + 
+                            totales.get("Aprovisionamientos", 0) +
+                            totales.get("Gastos de personal", 0) +
+                            totales.get("Otros gastos de explotación", 0) +
+                            totales.get("Otros resultados", 0))
+                elif "RESULTADO FINANCIERO" in titulo:
+                    valor = (totales.get("Ingresos financieros", 0) +
+                            totales.get("Gastos financieros", 0) +
+                            totales.get("Diferencias de cambio", 0))
+                elif "RESULTADO ANTES DE IMPUESTOS" in titulo:
+                    valor = (totales.get("Ingresos", 0) + 
+                            totales.get("Aprovisionamientos", 0) +
+                            totales.get("Gastos de personal", 0) +
+                            totales.get("Otros gastos de explotación", 0) +
+                            totales.get("Otros resultados", 0) +
+                            totales.get("Ingresos financieros", 0) +
+                            totales.get("Gastos financieros", 0) +
+                            totales.get("Diferencias de cambio", 0))
+                
+                reporte_data.append({
+                    "Concepto": titulo,
+                    "Importe": valor,
+                    "Tipo": "subtotal"
+                })
+        
+        # Mostrar el reporte
+        df_reporte = pd.DataFrame(reporte_data)
+        
+        def format_row(row):
+            if row["Tipo"] == "subtotal":
+                return f"**{row['Concepto']}** | **{row['Importe']:,.2f} €**"
+            elif row["Tipo"] == "categoria":
+                return f"**{row['Concepto']}** | {row['Importe']:,.2f} €"
+            else:
+                return f"{row['Concepto']} | {row['Importe']:,.2f} €"
+        
+        for _, row in df_reporte.iterrows():
+            st.write(format_row(row))
+        
+        # Métricas clave
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            ingresos = totales.get("Ingresos", 0)
+            st.metric("💰 Ingresos Netos", f"{ingresos:,.2f} €")
+            
+        with col2:
+            resultado_bruto = ingresos + totales.get("Aprovisionamientos", 0)
+            margen_bruto = (resultado_bruto / ingresos * 100) if ingresos > 0 else 0
+            st.metric("📈 Resultado Bruto", f"{resultado_bruto:,.2f} €", f"{margen_bruto:.1f}%")
+            
+        with col3:
+            resultado_final = sum(totales.get(cat, 0) for cat in totales.index)
+            margen_final = (resultado_final / ingresos * 100) if ingresos > 0 else 0
+            st.metric("🎯 Resultado Final", f"{resultado_final:,.2f} €", f"{margen_final:.1f}%")
+        
+        # Exportar datos
+        if st.button("📥 Descargar Reporte PGC"):
+            csv_data = df_reporte.to_csv(index=False, sep=';', decimal=',')
+            st.download_button(
+                label="💾 Descargar CSV",
+                data=csv_data,
+                file_name=f"PyG_PGC_{inicio_dt.strftime('%Y%m%d')}_{fin_dt.strftime('%Y%m%d')}.csv",
+                mime="text/csv"
+            )
+    
+    # ====== FUNCIÓN AUXILIAR PARA MEJORAR LA EXTRACCIÓN DE LÍNEAS ======
+    def parse_purchase_lines_enhanced(doc_json: dict):
+        """Versión mejorada para extraer líneas de compra con más detalle"""
+        lines = []
+        if not doc_json:
+            return lines
+            
+        raw_date = doc_json.get("date")
+        fecha = pd.to_datetime(raw_date, unit='s', errors='coerce') if isinstance(raw_date, (int, float)) \
+                else pd.to_datetime(raw_date, errors='coerce')
+        
+        # Buscar líneas en múltiples campos
+        items_fields = ["items", "lines", "concepts", "details", "positions"]
+        items = []
+        
+        for field in items_fields:
+            if field in doc_json and doc_json[field]:
+                items = doc_json[field]
+                break
+        
+        if items:
+            for i, ln in enumerate(items):
+                # Extraer importe con múltiples fallbacks
+                amt = 0.0
+                amount_fields = ["subTotal", "subtotal", "untaxedAmount", "netAmount", 
+                               "base", "amount", "total", "value", "import"]
+                
+                for field in amount_fields:
+                    if field in ln and ln[field] is not None:
+                        try:
+                            amt = float(ln[field])
+                            break
+                        except:
+                            continue
+                
+                # Si no encontró importe, calcular por qty * price
+                if amt == 0:
+                    try:
+                        qty = float(ln.get("quantity") or ln.get("qty") or 1)
+                        price = float(ln.get("unitPrice") or ln.get("price") or 
+                                    ln.get("unitCost") or ln.get("rate") or 0)
+                        amt = qty * price
+                    except:
+                        pass
+                
+                if amt == 0:
+                    continue
+                    
+                # Extraer código de cuenta
+                account_fields = ["expenseAccountCode", "accountCode", "expenseAccountId", 
+                                "accountId", "account", "expenseAccount"]
+                account_code = ""
+                
+                for field in account_fields:
+                    if field in ln and ln[field]:
+                        account_code = str(ln[field])
+                        break
+                
+                # Extraer descripción
+                desc_fields = ["accountName", "name", "description", "concept", 
+                              "detail", "item", "product"]
+                account_name = ""
+                
+                for field in desc_fields:
+                    if field in ln and ln[field]:
+                        account_name = str(ln[field])
+                        break
+                
+                # Si no hay descripción, usar índice
+                if not account_name:
+                    account_name = f"Línea {i+1}"
+                    
+                lines.append((fecha, account_code or "62XXX", account_name, float(amt)))
+        
+        else:
+            # No hay líneas, usar total del documento
+            total = 0.0
+            total_fields = ["subTotal", "subtotal", "untaxedAmount", "total", 
+                           "amount", "netAmount", "baseAmount"]
+            
+            for field in total_fields:
+                if field in doc_json and doc_json[field] is not None:
+                    try:
+                        total = float(doc_json[field])
+                        break
+                    except:
+                        continue
+            
+            if total > 0:
+                supplier = doc_json.get("contactName", "Proveedor sin nombre")
+                doc_number = doc_json.get("docNumber", "S/N")
+                lines.append((fecha, "62XXX", f"Gasto {supplier} - {doc_number}", float(total)))
+        
+        return lines    
 
     # ====== FUNCIONES AUXILIARES PARA HOLDED API ======
     import unicodedata, re
