@@ -1480,6 +1480,7 @@ def process_expenses_corrected(start_dt: datetime, end_dt: datetime, cliente_fil
 
 # ====== TAB 3: P&L desde Holded - VERSION PARCHEADA ======
 # ====== TAB 3: P&L desde Holded - VERSION CORREGIDA COMPLETA ======
+# ====== TAB 3: P&L desde Holded - VERSION CORREGIDA COMPLETA ======
 with tab3:
     st.header("📑 P&L desde Holded (API)")
     st.caption("Calculado desde documentos de Holded y libro diario contable para mayor precisión.")
@@ -2781,3 +2782,242 @@ with tab3:
                 st.warning("⚠️ No hay datos consolidados disponibles.")
         else:
             st.info("👆 Usa los filtros del sidebar y presiona 'Actualizar P&L' para cargar los datos.")
+
+    # ====== DIAGNÓSTICOS AVANZADOS ======
+    st.markdown("---")
+    st.header("🔧 Diagnósticos Avanzados")
+    
+    # Función para diagnosticar aprovisionamientos
+    def diagnose_aprovisionamientos_issues(df_consolidated: pd.DataFrame):
+        """
+        Diagnóstico detallado de aprovisionamientos para detectar duplicados y errores
+        """
+        st.subheader("🔍 Diagnóstico de Aprovisionamientos")
+        
+        if df_consolidated.empty:
+            st.warning("No hay datos para diagnosticar")
+            return
+        
+        # Filtrar solo aprovisionamientos
+        df_aprov = df_consolidated[df_consolidated["categoria"] == "Aprovisionamientos"].copy()
+        
+        if df_aprov.empty:
+            st.info("No se encontraron aprovisionamientos en los datos")
+            return
+        
+        # === ANÁLISIS GENERAL ===
+        total_aprov = df_aprov["importe"].sum()
+        expected_aprov = -9012.02  # Del Excel
+        difference = total_aprov - expected_aprov
+        
+        col1, col2, col3 = st.columns(3)
+        col1.metric("💰 Total Obtenido", f"{total_aprov:,.2f} €")
+        col2.metric("🎯 Total Esperado", f"{expected_aprov:,.2f} €")
+        col3.metric("⚠️ Diferencia", f"{difference:,.2f} €", 
+                    delta=f"{(difference/expected_aprov*100):.1f}%" if expected_aprov != 0 else "N/A")
+        
+        # === VERIFICACIÓN CUENTA ESPECÍFICA ===
+        st.subheader("🎯 Verificación Cuenta AD CONSULTING (60700017)")
+        
+        ad_consulting = df_aprov[df_aprov['cuenta'] == '60700017'].copy()
+        
+        if ad_consulting.empty:
+            st.error("❌ No se encontró la cuenta 60700017 - Trabajos realizados por AD CONSULTING")
+            
+            # Buscar variaciones posibles
+            possible_variants = df_consolidated[df_consolidated['descripcion'].str.contains('AD CONSULTING', case=False, na=False)]
+            if not possible_variants.empty:
+                st.warning("⚠️ Se encontraron estas variaciones:")
+                st.dataframe(possible_variants[['cuenta', 'descripcion', 'importe', 'fuente']])
+        else:
+            st.success("✅ Cuenta 60700017 encontrada")
+            
+            total_ad = ad_consulting['importe'].sum()
+            expected_ad = -9012.02
+            
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Total AD Consulting", f"{total_ad:,.2f} €")
+            col2.metric("Esperado AD Consulting", f"{expected_ad:,.2f} €") 
+            col3.metric("Diferencia AD", f"{total_ad - expected_ad:,.2f} €")
+            
+            # Mostrar detalle
+            st.dataframe(ad_consulting[['fecha', 'periodo', 'importe', 'fuente', 'cliente']])
+        
+        # === DETALLE POR CUENTA ===
+        st.subheader("📋 Detalle por Cuenta")
+        
+        cuenta_summary = df_aprov.groupby(["cuenta", "descripcion"]).agg({
+            "importe": ["sum", "count"],
+            "fuente": lambda x: ", ".join(x.unique()),
+            "fecha": ["min", "max"]
+        }).round(2)
+        
+        # Aplanar columnas
+        cuenta_summary.columns = ["Total", "Cantidad_Registros", "Fuentes", "Fecha_Min", "Fecha_Max"]
+        cuenta_summary = cuenta_summary.reset_index()
+        
+        st.dataframe(cuenta_summary, use_container_width=True)
+        
+        # === DETECCIÓN DE DUPLICADOS ===
+        st.subheader("🚨 Detección de Posibles Duplicados")
+        
+        # Buscar registros con mismo importe, fecha y cuenta
+        df_aprov['fecha_str'] = df_aprov['fecha'].dt.strftime('%Y-%m-%d')
+        df_aprov['importe_abs'] = df_aprov['importe'].abs()
+        
+        # Agrupar por fecha, cuenta e importe para detectar duplicados
+        duplicados = df_aprov.groupby(['fecha_str', 'cuenta', 'importe_abs']).agg({
+            'importe': 'sum',
+            'fuente': lambda x: list(x),
+            'descripcion': 'first',
+            'cliente': 'first'
+        }).reset_index()
+        
+        # Filtrar solo los que aparecen en múltiples fuentes
+        duplicados['num_fuentes'] = duplicados['fuente'].apply(len)
+        posibles_duplicados = duplicados[duplicados['num_fuentes'] > 1]
+        
+        if not posibles_duplicados.empty:
+            st.error(f"⚠️ Encontrados {len(posibles_duplicados)} posibles duplicados:")
+            
+            # Mostrar duplicados
+            duplicados_display = posibles_duplicados[['fecha_str', 'cuenta', 'descripcion', 'importe_abs', 'fuente', 'importe']].copy()
+            duplicados_display.columns = ['Fecha', 'Cuenta', 'Descripción', 'Importe_Original', 'Fuentes', 'Total_Duplicado']
+            st.dataframe(duplicados_display, use_container_width=True)
+            
+            # Calcular impacto de duplicados
+            impacto_duplicados = posibles_duplicados['importe'].sum() / 2  # Dividir por 2 porque está duplicado
+            st.error(f"💸 Impacto estimado de duplicados: {impacto_duplicados:,.2f} €")
+            
+            # Nuevo total sin duplicados
+            total_corregido = total_aprov - impacto_duplicados
+            st.success(f"✅ Total corregido (sin duplicados): {total_corregido:,.2f} €")
+            st.success(f"📊 Diferencia con Excel después de corrección: {total_corregido - expected_aprov:,.2f} €")
+            
+            return posibles_duplicados
+            
+        else:
+            st.success("✅ No se detectaron duplicados obvios en aprovisionamientos")
+        
+        # === ANÁLISIS POR FUENTE ===
+        st.subheader("📊 Análisis por Fuente de Datos")
+        
+        fuente_summary = df_aprov.groupby("fuente")["importe"].agg(["sum", "count"]).round(2)
+        fuente_summary.columns = ["Total", "Cantidad"]
+        fuente_summary = fuente_summary.reset_index()
+        
+        st.dataframe(fuente_summary, use_container_width=True)
+        
+        return None
+
+    def fix_aprovisionamientos_duplicates(df_consolidated: pd.DataFrame):
+        """
+        Función para corregir duplicados en aprovisionamientos
+        """
+        if df_consolidated.empty:
+            return df_consolidated
+        
+        # Crear copia para no modificar el original
+        df_fixed = df_consolidated.copy()
+        
+        # Filtrar aprovisionamientos
+        df_aprov = df_fixed[df_fixed["categoria"] == "Aprovisionamientos"].copy()
+        df_otros = df_fixed[df_fixed["categoria"] != "Aprovisionamientos"].copy()
+        
+        if df_aprov.empty:
+            return df_consolidated
+        
+        # Detectar duplicados
+        df_aprov['fecha_str'] = df_aprov['fecha'].dt.strftime('%Y-%m-%d')
+        df_aprov['importe_abs'] = df_aprov['importe'].abs()
+        df_aprov['duplicate_key'] = df_aprov['fecha_str'] + '_' + df_aprov['cuenta'] + '_' + df_aprov['importe_abs'].astype(str)
+        
+        # Remover duplicados manteniendo solo el del libro diario (más confiable)
+        df_aprov['fuente_priority'] = df_aprov['fuente'].map({
+            'Libro Diario': 1,
+            'Documento purchase': 2,
+            'Documento bill': 3,
+            'Documento expense': 4,
+            'Factura Venta': 5
+        })
+        
+        # Ordenar por prioridad y mantener solo el primero de cada grupo
+        df_aprov_sorted = df_aprov.sort_values(['duplicate_key', 'fuente_priority'])
+        df_aprov_fixed = df_aprov_sorted.groupby('duplicate_key').first().reset_index()
+        
+        # Eliminar columnas auxiliares
+        df_aprov_fixed = df_aprov_fixed.drop(['fecha_str', 'importe_abs', 'duplicate_key', 'fuente_priority'], axis=1)
+        
+        # Recombinar datos
+        df_result = pd.concat([df_otros, df_aprov_fixed], ignore_index=True)
+        
+        return df_result
+
+    # Botón para diagnosticar aprovisionamientos
+    if st.button("🔍 Diagnosticar Aprovisionamientos", type="secondary"):
+        if st.session_state.get("pl_data_updated", False):
+            df_data = st.session_state.get("df_pl_consolidated", pd.DataFrame())
+            if not df_data.empty:
+                with st.expander("📋 Diagnóstico de Aprovisionamientos", expanded=True):
+                    duplicados_encontrados = diagnose_aprovisionamientos_issues(df_data)
+                    
+                    if duplicados_encontrados is not None and not duplicados_encontrados.empty:
+                        st.markdown("---")
+                        if st.button("🔧 Corregir Duplicados Automáticamente"):
+                            df_fixed = fix_aprovisionamientos_duplicates(df_data)
+                            st.session_state.df_pl_consolidated = df_fixed
+                            st.success("✅ Duplicados corregidos. Presiona 'Actualizar P&L' para ver los cambios.")
+            else:
+                st.warning("No hay datos cargados para diagnosticar")
+        else:
+            st.warning("Primero carga los datos usando 'Actualizar P&L'")
+
+    # Diagnóstico rápido de todas las categorías
+    if st.button("📊 Diagnóstico General de Categorías", type="secondary"):
+        if st.session_state.get("pl_data_updated", False):
+            df_data = st.session_state.get("df_pl_consolidated", pd.DataFrame())
+            if not df_data.empty:
+                with st.expander("📋 Diagnóstico General", expanded=True):
+                    st.subheader("🔍 Comparación con Totales Esperados")
+                    
+                    # Totales esperados vs obtenidos
+                    expected_totals = {
+                        "Aprovisionamientos": -9012.02,
+                        "Gastos de personal": -52201.39,
+                        "Otros gastos de explotación": -275769.55,
+                        "Gastos financieros": -890.53,
+                        "Diferencias de cambio": 10628.19,
+                        "Otros resultados": 259.36,
+                        "Ingresos financieros": 0.18,
+                    }
+                    
+                    obtained_totals = df_data.groupby("categoria")["importe"].sum().to_dict()
+                    
+                    comparison_data = []
+                    for categoria, expected in expected_totals.items():
+                        obtained = obtained_totals.get(categoria, 0)
+                        difference = obtained - expected
+                        percentage_diff = (difference / expected * 100) if expected != 0 else 0
+                        
+                        status = "✅" if abs(difference) < 100 else "⚠️" if abs(difference) < 1000 else "❌"
+                        
+                        comparison_data.append({
+                            "Categoría": categoria,
+                            "Esperado": f"{expected:,.2f} €",
+                            "Obtenido": f"{obtained:,.2f} €",
+                            "Diferencia": f"{difference:,.2f} €",
+                            "% Diferencia": f"{percentage_diff:.1f}%",
+                            "Status": status
+                        })
+                    
+                    df_comparison = pd.DataFrame(comparison_data)
+                    st.dataframe(df_comparison, use_container_width=True)
+                    
+                    # Resumen de fuentes por categoría
+                    st.subheader("📊 Resumen por Fuente y Categoría")
+                    source_category_summary = df_data.groupby(["categoria", "fuente"])["importe"].sum().unstack(fill_value=0).round(2)
+                    st.dataframe(source_category_summary, use_container_width=True)
+            else:
+                st.warning("No hay datos cargados para diagnosticar")
+        else:
+            st.warning("Primero carga los datos usando 'Actualizar P&L'")
