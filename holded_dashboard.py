@@ -8,6 +8,317 @@ from datetime import date
 import altair as alt
 import requests
 import re, unicodedata
+# ====== P&L CON FORMATO PGC ESPAÑOL PARA HOLDED ======
+
+import pandas as pd
+import streamlit as st
+from datetime import datetime
+import requests
+import unicodedata
+import re
+
+# ====== CLASIFICADOR PGC MEJORADO ======
+def classify_pgc_account(account_code: str, account_name: str = "") -> dict:
+    """
+    Clasifica cuentas según PGC español y devuelve categoría, subcategoría y orden
+    """
+    code = str(account_code or "").strip()
+    name = str(account_name or "").lower()
+    
+    # Extraer solo dígitos iniciales
+    digits = re.match(r'^(\d{2,})', code.replace(" ", ""))
+    code_num = digits.group(1) if digits else ""
+    
+    # Estructura del PGC
+    pgc_structure = {
+        # INGRESOS
+        "70": {"main": "1. Importe neto de la cifra de negocios", "sub": "b) Prestaciones de servicios", "order": 100},
+        "71": {"main": "1. Importe neto de la cifra de negocios", "sub": "a) Ventas", "order": 101},
+        "72": {"main": "1. Importe neto de la cifra de negocios", "sub": "a) Ventas", "order": 102},
+        "73": {"main": "1. Importe neto de la cifra de negocios", "sub": "a) Ventas", "order": 103},
+        "74": {"main": "1. Importe neto de la cifra de negocios", "sub": "c) Otros ingresos", "order": 104},
+        "75": {"main": "1. Importe neto de la cifra de negocios", "sub": "c) Otros ingresos", "order": 105},
+        
+        # APROVISIONAMIENTOS
+        "60": {"main": "4. Aprovisionamientos", "sub": "a) Consumo de mercaderías", "order": 200},
+        "61": {"main": "4. Aprovisionamientos", "sub": "b) Consumo de materias primas", "order": 201},
+        "607": {"main": "4. Aprovisionamientos", "sub": "c) Trabajos realizados por otras empresas", "order": 202},
+        
+        # GASTOS DE PERSONAL  
+        "640": {"main": "6. Gastos de personal", "sub": "a) Sueldos, salarios y asimilados", "order": 300},
+        "641": {"main": "6. Gastos de personal", "sub": "a) Sueldos, salarios y asimilados", "order": 301},
+        "642": {"main": "6. Gastos de personal", "sub": "b) Cargas sociales", "order": 302},
+        "649": {"main": "6. Gastos de personal", "sub": "b) Cargas sociales", "order": 303},
+        
+        # OTROS GASTOS DE EXPLOTACIÓN
+        "621": {"main": "7. Otros gastos de explotación", "sub": "a) Servicios exteriores", "order": 400},
+        "622": {"main": "7. Otros gastos de explotación", "sub": "a) Servicios exteriores", "order": 401},
+        "623": {"main": "7. Otros gastos de explotación", "sub": "a) Servicios exteriores", "order": 402},
+        "624": {"main": "7. Otros gastos de explotación", "sub": "a) Servicios exteriores", "order": 403},
+        "625": {"main": "7. Otros gastos de explotación", "sub": "a) Servicios exteriores", "order": 404},
+        "626": {"main": "7. Otros gastos de explotación", "sub": "a) Servicios exteriores", "order": 405},
+        "627": {"main": "7. Otros gastos de explotación", "sub": "a) Servicios exteriores", "order": 406},
+        "628": {"main": "7. Otros gastos de explotación", "sub": "a) Servicios exteriores", "order": 407},
+        "629": {"main": "7. Otros gastos de explotación", "sub": "a) Servicios exteriores", "order": 408},
+        "631": {"main": "7. Otros gastos de explotación", "sub": "b) Tributos", "order": 409},
+        
+        # INGRESOS FINANCIEROS
+        "76": {"main": "14. Ingresos financieros", "sub": "b) De valores negociables y de créditos", "order": 500},
+        "769": {"main": "14. Ingresos financieros", "sub": "b) De valores negociables y de créditos", "order": 501},
+        
+        # GASTOS FINANCIEROS
+        "662": {"main": "15. Gastos financieros", "sub": "b) Por deudas con terceros", "order": 600},
+        "663": {"main": "15. Gastos financieros", "sub": "b) Por deudas con terceros", "order": 601},
+        "664": {"main": "15. Gastos financieros", "sub": "b) Por deudas con terceros", "order": 602},
+        "665": {"main": "15. Gastos financieros", "sub": "b) Por deudas con terceros", "order": 603},
+        "669": {"main": "15. Gastos financieros", "sub": "b) Por deudas con terceros", "order": 604},
+        
+        # DIFERENCIAS DE CAMBIO
+        "668": {"main": "17. Diferencias de cambio", "sub": "Diferencias de cambio", "order": 700},
+        "768": {"main": "17. Diferencias de cambio", "sub": "Diferencias de cambio", "order": 701},
+        
+        # OTROS RESULTADOS
+        "778": {"main": "13. Otros resultados", "sub": "a) Ingresos excepcionales", "order": 800},
+        "678": {"main": "13. Otros resultados", "sub": "b) Gastos excepcionales", "order": 801},
+    }
+    
+    # Buscar por código exacto primero
+    for code_key, data in pgc_structure.items():
+        if code_num.startswith(code_key):
+            return {
+                "main_category": data["main"],
+                "sub_category": data["sub"],
+                "order": data["order"],
+                "account_code": code,
+                "account_name": account_name
+            }
+    
+    # Fallback por nombre o código general
+    if "nomina" in name or "sueldo" in name or "salario" in name:
+        return {"main_category": "6. Gastos de personal", "sub_category": "a) Sueldos, salarios y asimilados", "order": 300, "account_code": code, "account_name": account_name}
+    elif "seguridad social" in name or "ss" in name:
+        return {"main_category": "6. Gastos de personal", "sub_category": "b) Cargas sociales", "order": 302, "account_code": code, "account_name": account_name}
+    elif "interes" in name or "prestamo" in name:
+        return {"main_category": "15. Gastos financieros", "sub_category": "b) Por deudas con terceros", "order": 600, "account_code": code, "account_name": account_name}
+    elif "cambio" in name or "divisa" in name:
+        return {"main_category": "17. Diferencias de cambio", "sub_category": "Diferencias de cambio", "order": 700, "account_code": code, "account_name": account_name}
+    elif code_num.startswith("7"):
+        return {"main_category": "1. Importe neto de la cifra de negocios", "sub_category": "b) Prestaciones de servicios", "order": 100, "account_code": code, "account_name": account_name}
+    elif code_num.startswith("6"):
+        return {"main_category": "7. Otros gastos de explotación", "sub_category": "a) Servicios exteriores", "order": 400, "account_code": code, "account_name": account_name}
+    
+    # Default
+    return {"main_category": "7. Otros gastos de explotación", "sub_category": "a) Servicios exteriores", "order": 400, "account_code": code, "account_name": account_name}
+
+def create_pgc_report(df_data: pd.DataFrame, start_date: datetime, end_date: datetime) -> pd.DataFrame:
+    """
+    Crear reporte P&L en formato PGC español
+    """
+    if df_data.empty:
+        return pd.DataFrame()
+    
+    # Clasificar cada línea según PGC
+    classified_data = []
+    
+    for _, row in df_data.iterrows():
+        classification = classify_pgc_account(row.get('cuenta', ''), row.get('descripcion', ''))
+        
+        classified_data.append({
+            'fecha': row['fecha'],
+            'periodo': row['periodo'],
+            'main_category': classification['main_category'],
+            'sub_category': classification['sub_category'],
+            'order': classification['order'],
+            'account_code': classification['account_code'],
+            'account_name': classification['account_name'],
+            'description': f"{classification['account_code']} - {classification['account_name']}",
+            'amount': row['importe']
+        })
+    
+    df_classified = pd.DataFrame(classified_data)
+    
+    # Crear estructura de periodos
+    date_range = pd.date_range(start=start_date, end=end_date, freq='MS')
+    periods = [d.strftime('%B %y') for d in date_range]
+    
+    # Inicializar estructura del reporte
+    report_structure = []
+    
+    # Agrupar por categorías y subcategorías
+    grouped = df_classified.groupby(['order', 'main_category', 'sub_category', 'description'])['amount'].sum().reset_index()
+    
+    current_main = None
+    current_sub = None
+    
+    for _, group in grouped.sort_values('order').iterrows():
+        main_cat = group['main_category']
+        sub_cat = group['sub_category']
+        description = group['description']
+        
+        # Agregar encabezado principal si es nuevo
+        if main_cat != current_main:
+            report_structure.append({
+                'category': main_cat,
+                'type': 'main_header',
+                'description': main_cat,
+                'level': 0,
+                'amount': 0,
+                'order': group['order']
+            })
+            current_main = main_cat
+            current_sub = None
+        
+        # Agregar subencabezado si es nuevo
+        if sub_cat != current_sub and sub_cat != main_cat:
+            report_structure.append({
+                'category': main_cat,
+                'type': 'sub_header',
+                'description': sub_cat,
+                'level': 1,
+                'amount': 0,
+                'order': group['order']
+            })
+            current_sub = sub_cat
+        
+        # Agregar línea de detalle
+        report_structure.append({
+            'category': main_cat,
+            'type': 'detail',
+            'description': description,
+            'level': 2,
+            'amount': group['amount'],
+            'order': group['order']
+        })
+    
+    # Calcular totales y agregar líneas de resultado
+    df_report = pd.DataFrame(report_structure)
+    
+    # Calcular totales por categoría principal
+    category_totals = df_classified.groupby('main_category')['amount'].sum().to_dict()
+    
+    # Agregar líneas de resultado importantes
+    ingresos = category_totals.get("1. Importe neto de la cifra de negocios", 0)
+    aprovisionamientos = category_totals.get("4. Aprovisionamientos", 0)
+    gastos_personal = category_totals.get("6. Gastos de personal", 0)
+    otros_gastos = category_totals.get("7. Otros gastos de explotación", 0)
+    otros_resultados = category_totals.get("13. Otros resultados", 0)
+    ingresos_financieros = category_totals.get("14. Ingresos financieros", 0)
+    gastos_financieros = category_totals.get("15. Gastos financieros", 0)
+    diferencias_cambio = category_totals.get("17. Diferencias de cambio", 0)
+    
+    # Calcular métricas clave
+    resultado_explotacion = ingresos + aprovisionamientos + gastos_personal + otros_gastos + otros_resultados
+    resultado_financiero = ingresos_financieros + gastos_financieros + diferencias_cambio
+    resultado_antes_impuestos = resultado_explotacion + resultado_financiero
+    
+    # Agregar líneas de resultado al final
+    result_lines = [
+        {'category': 'RESULTADO', 'type': 'result', 'description': 'Resultado de explotación', 'level': 0, 'amount': resultado_explotacion, 'order': 900},
+        {'category': 'RESULTADO', 'type': 'result', 'description': 'Resultado financiero', 'level': 0, 'amount': resultado_financiero, 'order': 901},
+        {'category': 'RESULTADO', 'type': 'result', 'description': 'Resultado antes de impuestos', 'level': 0, 'amount': resultado_antes_impuestos, 'order': 902},
+        {'category': 'RESULTADO', 'type': 'result', 'description': 'Resultado del ejercicio', 'level': 0, 'amount': resultado_antes_impuestos, 'order': 903}
+    ]
+    
+    df_results = pd.DataFrame(result_lines)
+    df_final_report = pd.concat([df_report, df_results], ignore_index=True)
+    
+    return df_final_report.sort_values('order')
+
+def format_pgc_display(df_report: pd.DataFrame) -> pd.DataFrame:
+    """
+    Formatear el reporte para visualización tipo PGC español
+    """
+    if df_report.empty:
+        return pd.DataFrame()
+    
+    display_data = []
+    
+    for _, row in df_report.iterrows():
+        # Formatear descripción con indentación
+        indent = "    " * row['level']
+        description = f"{indent}{row['description']}"
+        
+        # Formatear importe
+        amount = row['amount']
+        if amount == 0 and row['type'] in ['main_header', 'sub_header']:
+            amount_str = ""
+        else:
+            amount_str = f"{amount:,.2f} €" if amount != 0 else "0.00 €"
+        
+        display_data.append({
+            'Concepto': description,
+            'Importe': amount_str,
+            'Tipo': row['type'],
+            'Nivel': row['level']
+        })
+    
+    return pd.DataFrame(display_data)
+
+# ====== FUNCIÓN PRINCIPAL PARA USAR EN TU CÓDIGO ======
+def generate_pgc_report(df_consolidated: pd.DataFrame, fecha_inicio: datetime, fecha_fin: datetime):
+    """
+    Generar reporte P&L en formato PGC español
+    """
+    st.subheader("📋 P&L - Formato Plan General Contable")
+    
+    if df_consolidated.empty:
+        st.warning("No hay datos para generar el reporte")
+        return
+    
+    # Generar reporte PGC
+    df_pgc_report = create_pgc_report(df_consolidated, fecha_inicio, fecha_fin)
+    
+    if df_pgc_report.empty:
+        st.warning("No se pudo generar el reporte PGC")
+        return
+    
+    # Formatear para visualización
+    df_display = format_pgc_display(df_pgc_report)
+    
+    # Mostrar reporte con formato personalizado
+    st.markdown("### SOLUCIONES PARA GAMING ONLINE ATOMO GAMES SL")
+    st.markdown("---")
+    
+    # Crear tabla HTML personalizada para mejor formato
+    html_table = "<table style='width:100%; border-collapse: collapse;'>"
+    
+    for _, row in df_display.iterrows():
+        # Aplicar estilos según el tipo
+        if row['Tipo'] == 'main_header':
+            style = "font-weight: bold; background-color: #f0f0f0; border-top: 2px solid #333;"
+        elif row['Tipo'] == 'sub_header':
+            style = "font-weight: bold; font-style: italic; background-color: #f8f8f8;"
+        elif row['Tipo'] == 'result':
+            style = "font-weight: bold; border-top: 1px solid #666; background-color: #e8e8e8;"
+        else:
+            style = "padding-left: 20px;"
+        
+        html_table += f"""
+        <tr style='{style}'>
+            <td style='padding: 4px; border-bottom: 1px solid #ddd;'>{row['Concepto']}</td>
+            <td style='padding: 4px; text-align: right; border-bottom: 1px solid #ddd;'>{row['Importe']}</td>
+        </tr>
+        """
+    
+    html_table += "</table>"
+    
+    st.markdown(html_table, unsafe_allow_html=True)
+    
+    # Mostrar también como DataFrame para exportación
+    with st.expander("📊 Datos en formato tabla"):
+        st.dataframe(df_display[['Concepto', 'Importe']], use_container_width=True, height=600)
+    
+    # Resumen ejecutivo
+    ingresos_total = df_consolidated[df_consolidated['categoria'] == 'Ingresos']['importe'].sum()
+    gastos_total = df_consolidated[df_consolidated['categoria'].str.contains('gasto|Aprovisionamiento', case=False, na=False)]['importe'].sum()
+    resultado_neto = ingresos_total + gastos_total  # gastos ya son negativos
+    
+    col1, col2, col3 = st.columns(3)
+    col1.metric("💰 Ingresos Totales", f"{ingresos_total:,.2f} €")
+    col2.metric("💸 Gastos Totales", f"{abs(gastos_total):,.2f} €")  
+    col3.metric("💎 Resultado Neto", f"{resultado_neto:,.2f} €", delta=f"{(resultado_neto/ingresos_total*100):.1f}%" if ingresos_total > 0 else "0%")
+
+
 st.set_page_config(page_title="Dashboard de Márgenes", layout="wide")
 st.title("📊 Dashboard Interactivo Holded-Financiero")
 API_KEY = "fafbb8191b37e6b696f192e70b4a198c"
@@ -1646,123 +1957,129 @@ with tab3:
             st.error(f"❌ Error procesando datos: {str(e)}")
             st.exception(e)
             st.stop()
-
-    # ====== MOSTRAR RESULTADOS ======
-    if st.session_state.get("pl_data_updated", False):
-        df_data = st.session_state.get("df_pl_consolidated", pd.DataFrame())
-        if not df_data.empty:
-            df_pl_summary = df_data.groupby(["periodo", "categoria"])["importe"].sum().unstack(fill_value=0).reset_index()
-
-            required_columns = [
-                "Ingresos", "Aprovisionamientos", "Gastos de personal",
-                "Otros gastos de explotación", "Ingresos financieros",
-                "Gastos financieros", "Diferencias de cambio", "Otros resultados"
-            ]
-            for col in required_columns:
-                if col not in df_pl_summary.columns:
-                    df_pl_summary[col] = 0.0
-
-            # KPIs (gastos ya son negativos por normalización)
-            df_pl_summary["Margen Bruto"] = df_pl_summary["Ingresos"] + df_pl_summary["Aprovisionamientos"]
-            df_pl_summary["EBITDA"] = (df_pl_summary["Margen Bruto"] +
-                                       df_pl_summary["Gastos de personal"] +
-                                       df_pl_summary["Otros gastos de explotación"])
-            df_pl_summary["Resultado Operativo"] = df_pl_summary["EBITDA"] + df_pl_summary["Otros resultados"]
-            df_pl_summary["Resultado Financiero"] = (df_pl_summary["Ingresos financieros"] +
-                                                     df_pl_summary["Gastos financieros"] +
-                                                     df_pl_summary["Diferencias de cambio"])
-            df_pl_summary["Resultado Neto"] = df_pl_summary["Resultado Operativo"] + df_pl_summary["Resultado Financiero"]
-
-            st.subheader("📊 Resumen P&L")
-            totales = df_pl_summary.select_dtypes(include=[float, int]).sum()
-            col1, col2, col3, col4 = st.columns(4)
-            col1.metric("💰 Ingresos", f"${totales['Ingresos']:,.2f}")
-            col2.metric("📈 Margen Bruto", f"${totales['Margen Bruto']:,.2f}")
-            col3.metric("🎯 EBITDA", f"${totales['EBITDA']:,.2f}")
-            col4.metric("💎 Resultado Neto", f"${totales['Resultado Neto']:,.2f}")
-
-            if totales['Ingresos'] > 0:
-                col5, col6, col7, col8 = st.columns(4)
-                col5.metric("Margen %", f"{(totales['Margen Bruto']/totales['Ingresos']*100):.1f}%")
-                col6.metric("EBITDA %", f"{(totales['EBITDA']/totales['Ingresos']*100):.1f}%")
-                col7.metric("Resultado %", f"{(totales['Resultado Neto']/totales['Ingresos']*100):.1f}%")
-                gp = abs(totales['Gastos de personal'])
-                if gp > 0:
-                    col8.metric("Personal %", f"{(gp/totales['Ingresos']*100):.1f}%")
-
-            st.subheader("📋 P&L Detallado")
-            display_columns = [
-                "periodo", "Ingresos", "Aprovisionamientos", "Margen Bruto",
-                "Gastos de personal", "Otros gastos de explotación", "EBITDA",
-                "Ingresos financieros", "Gastos financieros", "Diferencias de cambio",
-                "Resultado Financiero", "Otros resultados", "Resultado Operativo", "Resultado Neto"
-            ]
-            df_display = df_pl_summary[display_columns].copy().round(2)
-            df_display.columns = [col.replace('periodo', '🗓️ Período') for col in df_display.columns]
-            st.dataframe(df_display, use_container_width=True, height=400)
-
-            if len(df_pl_summary) > 1:
-                st.subheader("📈 Evolución Temporal")
-                chart_metrics = ["Ingresos", "Margen Bruto", "EBITDA", "Resultado Neto"]
-                chart_data = df_pl_summary[["periodo"] + chart_metrics].melt(
-                    id_vars=["periodo"], var_name="Métrica", value_name="Valor"
-                )
-                chart = (
-                    alt.Chart(chart_data)
-                    .mark_line(point=True)
-                    .encode(
-                        x=alt.X("periodo:O", title="Período"),
-                        y=alt.Y("Valor:Q", title="Importe ($)"),
-                        color=alt.Color("Métrica:N"),
-                        tooltip=["periodo:O", "Métrica:N", "Valor:Q"]
+    tab_pgc, tab_actual = st.tabs(["📋 Formato PGC", "📊 Dashboard Actual"])
+    with tab_pgc:
+        if st.session_state.get("pl_data_updated", False):
+            df_data = st.session_state.get("df_pl_consolidated", pd.DataFrame())
+            if not df_data.empty:
+                generate_pgc_report(df_data, inicio_dt, fin_dt)
+    with tab_actual:
+        # ====== MOSTRAR RESULTADOS ======
+        if st.session_state.get("pl_data_updated", False):
+            df_data = st.session_state.get("df_pl_consolidated", pd.DataFrame())
+            if not df_data.empty:
+                df_pl_summary = df_data.groupby(["periodo", "categoria"])["importe"].sum().unstack(fill_value=0).reset_index()
+    
+                required_columns = [
+                    "Ingresos", "Aprovisionamientos", "Gastos de personal",
+                    "Otros gastos de explotación", "Ingresos financieros",
+                    "Gastos financieros", "Diferencias de cambio", "Otros resultados"
+                ]
+                for col in required_columns:
+                    if col not in df_pl_summary.columns:
+                        df_pl_summary[col] = 0.0
+    
+                # KPIs (gastos ya son negativos por normalización)
+                df_pl_summary["Margen Bruto"] = df_pl_summary["Ingresos"] + df_pl_summary["Aprovisionamientos"]
+                df_pl_summary["EBITDA"] = (df_pl_summary["Margen Bruto"] +
+                                           df_pl_summary["Gastos de personal"] +
+                                           df_pl_summary["Otros gastos de explotación"])
+                df_pl_summary["Resultado Operativo"] = df_pl_summary["EBITDA"] + df_pl_summary["Otros resultados"]
+                df_pl_summary["Resultado Financiero"] = (df_pl_summary["Ingresos financieros"] +
+                                                         df_pl_summary["Gastos financieros"] +
+                                                         df_pl_summary["Diferencias de cambio"])
+                df_pl_summary["Resultado Neto"] = df_pl_summary["Resultado Operativo"] + df_pl_summary["Resultado Financiero"]
+    
+                st.subheader("📊 Resumen P&L")
+                totales = df_pl_summary.select_dtypes(include=[float, int]).sum()
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric("💰 Ingresos", f"${totales['Ingresos']:,.2f}")
+                col2.metric("📈 Margen Bruto", f"${totales['Margen Bruto']:,.2f}")
+                col3.metric("🎯 EBITDA", f"${totales['EBITDA']:,.2f}")
+                col4.metric("💎 Resultado Neto", f"${totales['Resultado Neto']:,.2f}")
+    
+                if totales['Ingresos'] > 0:
+                    col5, col6, col7, col8 = st.columns(4)
+                    col5.metric("Margen %", f"{(totales['Margen Bruto']/totales['Ingresos']*100):.1f}%")
+                    col6.metric("EBITDA %", f"{(totales['EBITDA']/totales['Ingresos']*100):.1f}%")
+                    col7.metric("Resultado %", f"{(totales['Resultado Neto']/totales['Ingresos']*100):.1f}%")
+                    gp = abs(totales['Gastos de personal'])
+                    if gp > 0:
+                        col8.metric("Personal %", f"{(gp/totales['Ingresos']*100):.1f}%")
+    
+                st.subheader("📋 P&L Detallado")
+                display_columns = [
+                    "periodo", "Ingresos", "Aprovisionamientos", "Margen Bruto",
+                    "Gastos de personal", "Otros gastos de explotación", "EBITDA",
+                    "Ingresos financieros", "Gastos financieros", "Diferencias de cambio",
+                    "Resultado Financiero", "Otros resultados", "Resultado Operativo", "Resultado Neto"
+                ]
+                df_display = df_pl_summary[display_columns].copy().round(2)
+                df_display.columns = [col.replace('periodo', '🗓️ Período') for col in df_display.columns]
+                st.dataframe(df_display, use_container_width=True, height=400)
+    
+                if len(df_pl_summary) > 1:
+                    st.subheader("📈 Evolución Temporal")
+                    chart_metrics = ["Ingresos", "Margen Bruto", "EBITDA", "Resultado Neto"]
+                    chart_data = df_pl_summary[["periodo"] + chart_metrics].melt(
+                        id_vars=["periodo"], var_name="Métrica", value_name="Valor"
                     )
-                    .properties(height=400)
-                )
-                st.altair_chart(chart, use_container_width=True)
-
-            if mostrar_detalle_cuentas:
-                st.subheader("🔍 Detalle por Cuenta Contable")
-                col_f1, col_f2, col_f3 = st.columns(3)
-                categorias_disponibles = ["Todas"] + sorted(df_data["categoria"].unique().tolist())
-                cat_filter = col_f1.selectbox("Categoría", categorias_disponibles, key="cat_detail")
-                periodos_disponibles = ["Todos"] + sorted(df_data["periodo"].unique().tolist())
-                periodo_filter = col_f2.selectbox("Período", periodos_disponibles, key="periodo_detail")
-                clientes_disponibles = ["Todos"] + sorted(df_data["cliente"].unique().tolist())
-                cliente_detail_filter = col_f3.selectbox("Cliente", clientes_disponibles, key="cliente_detail")
-
-                df_filtered = df_data.copy()
-                if cat_filter != "Todas":
-                    df_filtered = df_filtered[df_filtered["categoria"] == cat_filter]
-                if periodo_filter != "Todos":
-                    df_filtered = df_filtered[df_filtered["periodo"] == periodo_filter]
-                if cliente_detail_filter != "Todos":
-                    df_filtered = df_filtered[df_filtered["cliente"] == cliente_detail_filter]
-
-                if not df_filtered.empty:
-                    df_detail_display = df_filtered[["periodo", "cliente", "categoria", "cuenta", "descripcion", "importe"]].copy()
-                    df_detail_display = df_detail_display.sort_values(["periodo", "categoria", "importe"], ascending=[True, True, False])
-                    df_detail_display["importe"] = df_detail_display["importe"].round(2)
-                    st.dataframe(df_detail_display, use_container_width=True, height=400)
-
-                    # Resumen por categoría (sin forzar colores)
-                    resumen_cat = df_filtered.groupby("categoria")["importe"].sum().reset_index().sort_values("importe")
-                    if len(resumen_cat) > 0:
-                        chart_cat = (
-                            alt.Chart(resumen_cat)
-                            .mark_bar()
-                            .encode(
-                                x=alt.X("importe:Q", title="Importe ($)"),
-                                y=alt.Y("categoria:N", sort="-x", title="Categoría")
-                            )
-                            .properties(height=300)
+                    chart = (
+                        alt.Chart(chart_data)
+                        .mark_line(point=True)
+                        .encode(
+                            x=alt.X("periodo:O", title="Período"),
+                            y=alt.Y("Valor:Q", title="Importe ($)"),
+                            color=alt.Color("Métrica:N"),
+                            tooltip=["periodo:O", "Métrica:N", "Valor:Q"]
                         )
-                        st.altair_chart(chart_cat, use_container_width=True)
-                else:
-                    st.info("No hay datos que coincidan con los filtros seleccionados.")
+                        .properties(height=400)
+                    )
+                    st.altair_chart(chart, use_container_width=True)
+    
+                if mostrar_detalle_cuentas:
+                    st.subheader("🔍 Detalle por Cuenta Contable")
+                    col_f1, col_f2, col_f3 = st.columns(3)
+                    categorias_disponibles = ["Todas"] + sorted(df_data["categoria"].unique().tolist())
+                    cat_filter = col_f1.selectbox("Categoría", categorias_disponibles, key="cat_detail")
+                    periodos_disponibles = ["Todos"] + sorted(df_data["periodo"].unique().tolist())
+                    periodo_filter = col_f2.selectbox("Período", periodos_disponibles, key="periodo_detail")
+                    clientes_disponibles = ["Todos"] + sorted(df_data["cliente"].unique().tolist())
+                    cliente_detail_filter = col_f3.selectbox("Cliente", clientes_disponibles, key="cliente_detail")
+    
+                    df_filtered = df_data.copy()
+                    if cat_filter != "Todas":
+                        df_filtered = df_filtered[df_filtered["categoria"] == cat_filter]
+                    if periodo_filter != "Todos":
+                        df_filtered = df_filtered[df_filtered["periodo"] == periodo_filter]
+                    if cliente_detail_filter != "Todos":
+                        df_filtered = df_filtered[df_filtered["cliente"] == cliente_detail_filter]
+    
+                    if not df_filtered.empty:
+                        df_detail_display = df_filtered[["periodo", "cliente", "categoria", "cuenta", "descripcion", "importe"]].copy()
+                        df_detail_display = df_detail_display.sort_values(["periodo", "categoria", "importe"], ascending=[True, True, False])
+                        df_detail_display["importe"] = df_detail_display["importe"].round(2)
+                        st.dataframe(df_detail_display, use_container_width=True, height=400)
+    
+                        # Resumen por categoría (sin forzar colores)
+                        resumen_cat = df_filtered.groupby("categoria")["importe"].sum().reset_index().sort_values("importe")
+                        if len(resumen_cat) > 0:
+                            chart_cat = (
+                                alt.Chart(resumen_cat)
+                                .mark_bar()
+                                .encode(
+                                    x=alt.X("importe:Q", title="Importe ($)"),
+                                    y=alt.Y("categoria:N", sort="-x", title="Categoría")
+                                )
+                                .properties(height=300)
+                            )
+                            st.altair_chart(chart_cat, use_container_width=True)
+                    else:
+                        st.info("No hay datos que coincidan con los filtros seleccionados.")
+            else:
+                st.warning("⚠️ No hay datos consolidados disponibles.")
         else:
-            st.warning("⚠️ No hay datos consolidados disponibles.")
-    else:
-        st.info("👆 Usa los filtros del sidebar y presiona 'Actualizar P&L' para cargar los datos.")
+            st.info("👆 Usa los filtros del sidebar y presiona 'Actualizar P&L' para cargar los datos.")
 
 
 # ====== FIN DEL CÓDIGO ======
